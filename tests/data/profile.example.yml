@@ -1,0 +1,7 @@
+version: 1
+hostname: web-01
+timezone: Asia/Jakarta
+packages:
+  - curl
+  - htop
+  - vim

@@ -19,6 +19,10 @@ mypy --strict src
 echo "==> Menjalankan pytest -q..."
 pytest -q
 
+echo "==> Memeriksa dependensi runtime..."
+python3 scripts/check-deps.py
+
+
 echo "==> Menjalankan shellcheck..."
 if command -v shellcheck >/dev/null 2>&1; then
     mapfile -t sh_files < <(find . -name "*.sh" -not -path "*/.*/*")

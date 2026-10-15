@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+set -eu
+PYTHONPATH="/usr/local/lib/hostkeeper" exec python3 -m hostkeeper "$@"

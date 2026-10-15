@@ -91,7 +91,7 @@ class PlanReport:
 
     @property
     def total_changes(self) -> int:
-        return sum(len(item.changes) for item in self.items)
+        return sum(1 for item in self.items if len(item.changes) > 0)
 
     @property
     def total_compliant(self) -> int:

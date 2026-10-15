@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from typing import Any
+from typing import IO, Any
 
 from hostkeeper import messages
 from hostkeeper.engine.step import Change, Risk
@@ -54,23 +54,27 @@ def _change_desc_for_step(
     check_current: str,
     changes: list[Change],
     compliant: bool,
+    step: Any = None,
 ) -> tuple[str, str]:
     """Menghasilkan (simbol, deskripsi) untuk baris plan."""
-    if compliant:
-        return SYM_OK, f"{check_current} (sudah sesuai)"
-
-    if not changes:
+    if compliant or not changes:
         return SYM_OK, f"{check_current} (sudah sesuai)"
 
     if all(c.action == "install" for c in changes):
         pkgs = ", ".join(c.after or c.target for c in changes if c.after)
         sym = SYM_ADD
-        # Cek ada yang sudah terpasang
         installed_note = ""
-        if compliant is False and check_current.startswith("belum terpasang"):
-            # Ada yang sudah terpasang jika jumlah paket > len(changes)
-            pass
-        return sym, f"pasang: {pkgs}"
+        if (
+            step is not None
+            and hasattr(step, "profile")
+            and getattr(step.profile, "packages", None)
+        ):
+            all_pkgs = set(step.profile.packages)
+            needed_pkgs = set(c.after or c.target for c in changes)
+            already = sorted(all_pkgs - needed_pkgs)
+            if already:
+                installed_note = f" ({', '.join(already)} sudah terpasang)"
+        return sym, f"pasang: {pkgs}{installed_note}"
 
     # set action
     for ch in changes:
@@ -83,12 +87,13 @@ def _change_desc_for_step(
 def print_plan_table(
     plan_items: list[Any],
     no_color: bool = False,
+    out: IO[str] = sys.stdout,
 ) -> None:
-    """Mencetak tabel plan ke stdout.
+    """Mencetak tabel plan ke stream out.
 
     plan_items: list[PlanItem] dari engine.planner.
     """
-    print(messages.PLAN_TABLE_HEADER)
+    print(messages.PLAN_TABLE_HEADER, file=out)
     for item in plan_items:
         step = item.step
         sym, desc = _change_desc_for_step(
@@ -96,17 +101,20 @@ def print_plan_table(
             check_current=item.check_result.current,
             changes=item.changes,
             compliant=item.check_result.compliant,
+            step=step,
         )
+
         # Tentukan risk string
         risk_str = step.risk.value if item.changes else "-"
         row = format_plan_row(sym, step.name, desc, risk_str)
-        print(row)
+        print(row, file=out)
 
 
 def print_plan_json(
     version: str,
     profile_path: str,
     plan_items: list[Any],
+    out: IO[str] = sys.stdout,
 ) -> None:
     """Mencetak output plan dalam format JSON."""
     steps_out: list[dict[str, Any]] = []
@@ -132,12 +140,11 @@ def print_plan_json(
             }
         )
 
-    total_changes = sum(len(item.changes) for item in plan_items)
+    total_changes = sum(1 for item in plan_items if item.changes)
+
     total_ok = sum(1 for item in plan_items if item.check_result.compliant)
     total_high_risk = sum(
-        1
-        for item in plan_items
-        if item.changes and step.risk == Risk.HIGH
+        1 for item in plan_items if item.changes and step.risk == Risk.HIGH
     )
 
     output = {
@@ -150,45 +157,52 @@ def print_plan_json(
             "high_risk": total_high_risk,
         },
     }
-    print(json.dumps(output, ensure_ascii=False, indent=None))
+    print(json.dumps(output, ensure_ascii=False, indent=None), file=out)
 
 
 def print_verify_table(
-    plan_items: list[Any],
+    items: list[Any],
+    out: IO[str] = sys.stdout,
 ) -> int:
     """Mencetak tabel verify. Mengembalikan jumlah Step drift."""
     drift = 0
-    for item in plan_items:
-        step = item.step
-        chk = item.check_result
+    for it in items:
+        if isinstance(it, tuple):
+            step, chk = it
+        else:
+            step = it.step
+            chk = it.check_result
+
         if chk.compliant:
-            print(f" {SYM_OK} {step.name:<10} {chk.current}")
+            print(f" {SYM_OK} {step.name:<10} {chk.current}", file=out)
         else:
             drift += 1
             expected = ""
-            # Cari nilai expected dari changes atau profil
-            if item.changes:
-                for ch in item.changes:
-                    if ch.after:
-                        expected = ch.after
-                        break
+            if step.name == "hostname" and getattr(step, "profile", None):
+                expected = step.profile.hostname or ""
+            elif step.name == "timezone" and getattr(step, "profile", None):
+                expected = step.profile.timezone or ""
+
             if expected:
                 desc = messages.VERIFY_EXPECT.format(
                     expected=expected, current=chk.current
                 )
             else:
                 desc = chk.current
-            print(f" {SYM_CHANGE} {step.name:<10} {desc}")
+            print(f" {SYM_CHANGE} {step.name:<10} {desc}", file=out)
     return drift
 
 
-def print_verify_json(plan_items: list[Any]) -> int:
+def print_verify_json(items: list[Any], out: IO[str] = sys.stdout) -> int:
     """Mencetak verify dalam JSON. Mengembalikan jumlah drift."""
     drift = 0
     steps_out: list[dict[str, Any]] = []
-    for item in plan_items:
-        step = item.step
-        chk = item.check_result
+    for it in items:
+        if isinstance(it, tuple):
+            step, chk = it
+        else:
+            step = it.step
+            chk = it.check_result
         status = "ok" if chk.compliant else "drift"
         if not chk.compliant:
             drift += 1
@@ -200,5 +214,5 @@ def print_verify_json(plan_items: list[Any]) -> int:
             }
         )
     output = {"steps": steps_out, "drift": drift}
-    print(json.dumps(output, ensure_ascii=False))
+    print(json.dumps(output, ensure_ascii=False), file=out)
     return drift

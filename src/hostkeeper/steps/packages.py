@@ -86,9 +86,7 @@ class PackagesStep(Step):
         if not changes:
             return
         pkgs = [
-            c.after
-            for c in changes
-            if c.action == "install" and c.after is not None
+            c.after for c in changes if c.action == "install" and c.after is not None
         ]
         if not pkgs:
             return

@@ -1,0 +1,14 @@
+# Contoh profil konfigurasi hostkeeper (v0.1)
+version: 1
+
+# Hostname statis sistem (RFC 1123)
+hostname: web-01
+
+# Zona waktu sistem (merujuk ke /usr/share/zoneinfo)
+timezone: Asia/Jakarta
+
+# Paket-paket APT dasar yang dipastikan terpasang
+packages:
+  - curl
+  - htop
+  - vim

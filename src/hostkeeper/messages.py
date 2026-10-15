@@ -52,9 +52,7 @@ PACKAGE_NOT_AVAILABLE = (
     "(Candidate: none). Mungkin perlu `apt-get update` terlebih dahulu."
 )
 APT_UPDATE_FAILED = "apt-get update gagal: {stderr}"
-APT_INSTALL_FAILED = (
-    "apt-get install gagal (exit {returncode}): {stderr}"
-)
+APT_INSTALL_FAILED = "apt-get install gagal (exit {returncode}): {stderr}"
 PACKAGES_CANNOT_UNDO = "packages tidak dapat dibalik otomatis."
 
 # Executor messages
@@ -63,21 +61,20 @@ APPLY_CONFIRM_PROMPT = "\nLanjutkan menerapkan {changes} perubahan? [y/N] "
 APPLY_STEP_OK = " {sym} {name:<10} {desc} OK (verify lolos)"
 APPLY_STEP_FAIL = " {sym} {name:<10} {desc}"
 APPLY_STEP_SKIP = " {sym} (tidak ada Step tersisa)"
-APPLY_DONE = "Selesai: {applied} diterapkan, {failed} gagal. Jalankan `hostkeeper verify` untuk memastikan."
+APPLY_DONE = (
+    "Selesai: {applied} diterapkan, {failed} gagal. "
+    "Jalankan `hostkeeper verify` untuk memastikan."
+)
 APPLY_JOURNAL = "Journal: {path}"
 APPLY_FAIL_SUMMARY = "Kegagalan: Step {step}. Membalik Step yang reversible: {undone}."
 APPLY_ABORT = "Apply dibatalkan."
 APPLY_DRY_RUN = "[dry-run] {cmd}"
 
 # Lock messages
-LOCK_CONFLICT = (
-    "hostkeeper lain sedang berjalan (lock /run/hostkeeper.lock)."
-)
+LOCK_CONFLICT = "hostkeeper lain sedang berjalan (lock /run/hostkeeper.lock)."
 
 # CLI error messages
-ERROR_APPLY_NEEDS_ROOT = (
-    "apply membutuhkan root. Jalankan: sudo hostkeeper apply"
-)
+ERROR_APPLY_NEEDS_ROOT = "apply membutuhkan root. Jalankan: sudo hostkeeper apply"
 ERROR_PROFILE_INVALID = "profil tidak valid: {detail}"
 ERROR_UNEXPECTED = "Kesalahan tidak terduga: {detail}"
 ERROR_UNSUPPORTED_ENV = "Lingkungan tidak didukung: {detail}"
@@ -104,7 +101,9 @@ PROFILE_NOT_FOUND = "tidak ada"
 PLAN_HEADER = "hostkeeper {version} plan"
 PLAN_PROFILE_LINE = "Profil: {path} (version {version})"
 PLAN_HOST_LINE = "Host  : {hostname}"
-PLAN_TABLE_HEADER = " STATUS  STEP       PERUBAHAN                                   RISIKO"
+PLAN_TABLE_HEADER = (
+    " STATUS  STEP       PERUBAHAN                                   RISIKO"
+)
 
 # Apply step descriptions
 STEP_DESC_SET = "{before} -> {after}"
@@ -113,6 +112,7 @@ STEP_DESC_ALREADY = "{current} (sudah sesuai)"
 
 # Verify output
 VERIFY_ALL_OK = "Semua Step sesuai profil."
-VERIFY_DRIFT = "{n} Step menyimpang dari profil. Jalankan `hostkeeper plan` untuk detail."
+VERIFY_DRIFT = (
+    "{n} Step menyimpang dari profil. Jalankan `hostkeeper plan` untuk detail."
+)
 VERIFY_EXPECT = "diharapkan {expected}, sekarang {current}"
-

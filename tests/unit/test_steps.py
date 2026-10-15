@@ -51,6 +51,7 @@ def test_generic_step_idempotency(step_cls: type) -> None:
         version=1,
         hostname="web-01",
         timezone="Asia/Jakarta",
+        packages=("htop",),
     )
     # Runner awal dengan kondisi drift
     runner = FakeRunner(
@@ -60,6 +61,12 @@ def test_generic_step_idempotency(step_cls: type) -> None:
             ("timedatectl", "show", "-p", "Timezone", "--value"): "UTC\n",
             ("timedatectl", "set-timezone", "Asia/Jakarta"): "",
             ("getent", "hosts", "web-01"): "127.0.0.1 web-01\n",
+            ("dpkg-query", "-W", "-f=${Package} ${Status}\\n", "htop"): (
+                "htop deinstall ok config-files\n"
+            ),
+            ("apt-cache", "policy", "htop"): "htop:\n  Candidate: 3.2.2\n",
+            ("apt-get", "update"): "",
+            ("apt-get", "install", "-y", "--no-install-recommends", "htop"): "",
         }
     )
     fs = FakeFileOps()
@@ -82,6 +89,11 @@ def test_generic_step_idempotency(step_cls: type) -> None:
         runner.register(
             ["timedatectl", "show", "-p", "Timezone", "--value"],
             "Asia/Jakarta\n",
+        )
+    elif step.name == "packages":
+        runner.register(
+            ["dpkg-query", "-W", "-f=${Package} ${Status}\\n", "htop"],
+            "htop install ok installed\n",
         )
 
     # Periksa ulang (check dan plan kedua)

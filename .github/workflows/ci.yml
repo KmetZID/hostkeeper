@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  lint-and-test:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -18,7 +18,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
@@ -37,12 +37,91 @@ jobs:
       - name: Run mypy
         run: mypy --strict src
 
-      - name: Run pytest
-        run: pytest -q
-
       - name: Run shellcheck
+        run: shellcheck install.sh uninstall.sh packaging/hostkeeper.launcher scripts/*.sh
+
+  unit:
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
         run: |
-          mapfile -t sh_files < <(find . -name "*.sh" -not -path "*/.*/*")
-          if [ "${#sh_files[@]}" -gt 0 ]; then
-            shellcheck "${sh_files[@]}"
+          python -m pip install --upgrade pip
+          pip install .[dev]
+
+      - name: Run pytest with coverage
+        run: |
+          pytest tests/unit tests/golden --cov=hostkeeper.engine --cov=hostkeeper.steps --cov-fail-under=85 -q
+
+  no-extra-deps:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run check-deps script
+        run: python3 scripts/check-deps.py
+
+  install:
+    needs: [lint, unit, no-extra-deps]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        container:
+          - "debian:12"
+          - "debian:13"
+          - "ubuntu:22.04"
+          - "ubuntu:24.04"
+    container:
+      image: ${{ matrix.container }}
+    steps:
+      - name: Install git and sudo
+        run: |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends git sudo
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install hostkeeper (first run)
+        run: ./install.sh --no-systemd --yes
+
+      - name: Install hostkeeper (second run - idempotency)
+        run: ./install.sh --no-systemd --yes
+
+      - name: Smoke test hostkeeper version
+        run: /usr/local/bin/hostkeeper version
+
+      - name: Test hostkeeper plan on example profile
+        run: /usr/local/bin/hostkeeper plan -c tests/data/profile.example.yml
+
+      - name: Uninstall hostkeeper
+        run: ./uninstall.sh --yes
+
+      - name: Verify no leftover installation files
+        run: |
+          if [ -e /usr/local/bin/hostkeeper ]; then
+            echo "ERROR: /usr/local/bin/hostkeeper masih ada setelah uninstall." >&2
+            exit 1
+          fi
+          if [ -e /usr/local/lib/hostkeeper ]; then
+            echo "ERROR: /usr/local/lib/hostkeeper masih ada setelah uninstall." >&2
+            exit 1
           fi

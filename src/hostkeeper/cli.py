@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import socket
 import sys
 import traceback
 from pathlib import Path
@@ -24,7 +25,8 @@ from hostkeeper.output import (
     print_verify_table,
 )
 from hostkeeper.profile import ProfileValidationError, load_profile
-from hostkeeper.system.fileops import ReadOnlyFileOps
+from hostkeeper.steps import REGISTRY
+from hostkeeper.system.fileops import ReadOnlyFileOps, RealFileOps
 from hostkeeper.system.runner import ReadOnlyRunner, SubprocessRunner
 
 # Exit codes sesuai SPEC bagian 7
@@ -37,35 +39,27 @@ EXIT_ENV = 5
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="hostkeeper",
-        description="Server setup and maintenance tool",
-    )
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=f"hostkeeper {__version__}",
-    )
-    parser.add_argument(
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(
         "-c",
         "--config",
         default="/etc/hostkeeper/profile.yml",
         metavar="FILE",
         help="Path ke file profil (default: /etc/hostkeeper/profile.yml)",
     )
-    parser.add_argument(
+    common.add_argument(
         "--json",
         action="store_true",
         default=False,
         help="Output dalam format JSON",
     )
-    parser.add_argument(
+    common.add_argument(
         "--no-color",
         action="store_true",
         default=False,
         help="Matikan output berwarna",
     )
-    parser.add_argument(
+    common.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -73,13 +67,32 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Tampilkan stack trace saat error",
     )
 
+    parser = argparse.ArgumentParser(
+        prog="hostkeeper",
+        description="Server setup and maintenance tool",
+        parents=[common],
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"hostkeeper {__version__}",
+    )
+
     subparsers = parser.add_subparsers(dest="command")
 
     # version
-    subparsers.add_parser("version", help="Tampilkan versi dan info lingkungan")
+    subparsers.add_parser(
+        "version",
+        parents=[common],
+        help="Tampilkan versi dan info lingkungan",
+    )
 
     # plan
-    plan_p = subparsers.add_parser("plan", help="Tampilkan perubahan tanpa menerapkan")
+    plan_p = subparsers.add_parser(
+        "plan",
+        parents=[common],
+        help="Tampilkan perubahan tanpa menerapkan",
+    )
     plan_p.add_argument(
         "--check",
         action="store_true",
@@ -89,7 +102,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # apply
     apply_p = subparsers.add_parser(
-        "apply", help="Terapkan perubahan dengan konfirmasi"
+        "apply",
+        parents=[common],
+        help="Terapkan perubahan dengan konfirmasi",
     )
     apply_p.add_argument(
         "--yes",
@@ -106,13 +121,20 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     # verify
-    subparsers.add_parser("verify", help="Cek kesesuaian tanpa mengubah")
+    subparsers.add_parser(
+        "verify",
+        parents=[common],
+        help="Cek kesesuaian tanpa mengubah",
+    )
 
     # Stub subcommands
-    subparsers.add_parser("rollback", help="Kembalikan run dari journal (v0.2)")
-    subparsers.add_parser("setup", help="Wizard interaktif (v0.2)")
-    subparsers.add_parser("watch", help="Monitoring (v0.2)")
-    subparsers.add_parser("status", help="Kartu kesehatan (v0.3)")
+    for stub_name, stub_help in [
+        ("rollback", "Kembalikan run dari journal (v0.2)"),
+        ("setup", "Wizard interaktif (v0.2)"),
+        ("watch", "Monitoring (v0.2)"),
+        ("status", "Kartu kesehatan (v0.3)"),
+    ]:
+        subparsers.add_parser(stub_name, parents=[common], help=stub_help)
 
     return parser
 
@@ -121,7 +143,9 @@ def cmd_version(args: argparse.Namespace, out: IO[str] = sys.stdout) -> int:
     """Menampilkan versi dan info lingkungan."""
     profile_path = Path(args.config)
     env = detect_env(profile_path=profile_path)
-    support = messages.VERSION_SUPPORTED if env.is_supported else messages.VERSION_UNSUPPORTED
+    support = (
+        messages.VERSION_SUPPORTED if env.is_supported else messages.VERSION_UNSUPPORTED
+    )
     systemd_status = (
         messages.VERSION_SYSTEMD_ACTIVE
         if env.systemd_active
@@ -134,8 +158,14 @@ def cmd_version(args: argparse.Namespace, out: IO[str] = sys.stdout) -> int:
     )
 
     print(f"hostkeeper {__version__}", file=out)
-    print(messages.VERSION_OS.format(os_name=env.os_name, support=support), file=out)
-    print(messages.VERSION_PYTHON.format(python_version=env.python_version), file=out)
+    print(
+        messages.VERSION_OS.format(os_name=env.os_name, support=support),
+        file=out,
+    )
+    print(
+        messages.VERSION_PYTHON.format(python_version=env.python_version),
+        file=out,
+    )
     print(messages.VERSION_SYSTEMD.format(status=systemd_status), file=out)
     print(
         messages.VERSION_PROFILE.format(path=profile_path, exists=profile_exists),
@@ -166,26 +196,35 @@ def cmd_plan(args: argparse.Namespace, out: IO[str] = sys.stdout) -> int:
 
     print(f"hostkeeper {__version__} plan", file=out)
     print(
-        messages.PLAN_PROFILE_LINE.format(
-            path=profile_path, version=profile.version
-        ),
+        messages.PLAN_PROFILE_LINE.format(path=profile_path, version=profile.version),
         file=out,
     )
 
     # Tampilkan host saat ini
-    env = detect_env(profile_path)
-    if profile.hostname:
-        print(messages.PLAN_HOST_LINE.format(hostname="(tidak tersedia di non-root)"), file=out)
+    current_host = ""
+    for item in plan_report.items:
+        if item.step.name == "hostname":
+            current_host = item.check_result.current
+            break
+    if not current_host:
+        try:
+            current_host = socket.gethostname()
+        except OSError:
+            current_host = "-"
+
+    print(messages.PLAN_HOST_LINE.format(hostname=current_host), file=out)
 
     if use_json:
         print_plan_json(
             version=__version__,
             profile_path=str(profile_path),
             plan_items=plan_report.items,
+            out=out,
         )
     else:
         print("", file=out)
-        print_plan_table(plan_report.items)
+        print_plan_table(plan_report.items, out=out)
+
         print("", file=out)
         summary = format_plan_summary(
             changes=plan_report.total_changes,
@@ -241,17 +280,15 @@ def cmd_apply(args: argparse.Namespace, out: IO[str] = sys.stdout) -> int:
         return EXIT_LOCK
 
     try:
-        from hostkeeper.system.runner import SubprocessRunner
-        from hostkeeper.system.fileops import RealFileOps
-
         runner = SubprocessRunner()
         fs = RealFileOps(run_id=run_id)
         planner = Planner(profile, runner, fs)
+
         plan_report = planner.plan()
 
         # Tampilkan tabel plan
         print("", file=out)
-        print_plan_table(plan_report.items)
+        print_plan_table(plan_report.items, out=out)
 
         # Setup audit dan journal
         audit = AuditWriter(run_id=run_id)
@@ -262,9 +299,7 @@ def cmd_apply(args: argparse.Namespace, out: IO[str] = sys.stdout) -> int:
         )
 
         # Siapkan pasangan (step, changes)
-        steps_with_changes = [
-            (item.step, item.changes) for item in plan_report.items
-        ]
+        steps_with_changes = [(item.step, item.changes) for item in plan_report.items]
 
         executor = Executor(
             steps_with_changes=steps_with_changes,
@@ -307,19 +342,19 @@ def cmd_verify(args: argparse.Namespace, out: IO[str] = sys.stdout) -> int:
 
     runner = ReadOnlyRunner(SubprocessRunner())
     fs = ReadOnlyFileOps()
-    planner = Planner(profile, runner, fs)
-    plan_report = planner.plan()
+    steps = [cls(profile, runner, fs) for cls in REGISTRY]
+    verify_items = [(s, s.check()) for s in steps if s.enabled()]
 
     if use_json:
-        drift = print_verify_json(plan_report.items)
+        drift = print_verify_json(verify_items, out=out)
     else:
-        drift = print_verify_table(plan_report.items)
+        drift = print_verify_table(verify_items, out=out)
         if drift == 0:
             print(messages.VERIFY_ALL_OK, file=out)
         else:
             print(
                 messages.VERIFY_DRIFT.format(n=drift),
-                file=sys.stderr,
+                file=out,
             )
 
     return EXIT_DRIFT if drift > 0 else EXIT_OK
@@ -328,7 +363,10 @@ def cmd_verify(args: argparse.Namespace, out: IO[str] = sys.stdout) -> int:
 def main(argv: Sequence[str] | None = None, out: IO[str] = sys.stdout) -> int:
     """Entrypoint utama CLI. Mengembalikan exit code."""
     parser = _build_parser()
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as exc:
+        return exc.code if isinstance(exc.code, int) else EXIT_USAGE
 
     verbose: bool = getattr(args, "verbose", False)
     command = getattr(args, "command", None)

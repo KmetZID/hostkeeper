@@ -147,9 +147,7 @@ class Executor:
             desc = self._describe_changes(changes)
 
             if self.dry_run:
-                self._print(
-                    messages.APPLY_DRY_RUN.format(cmd=f"{step.name}: {desc}")
-                )
+                self._print(messages.APPLY_DRY_RUN.format(cmd=f"{step.name}: {desc}"))
                 sr.skipped = True
                 report.results.append(sr)
                 continue
@@ -288,9 +286,7 @@ class Executor:
 
         # Cetak ringkasan kegagalan
         if undone_names:
-            undone_str = ", ".join(
-                f"{n} dikembalikan" for n in undone_names
-            )
+            undone_str = ", ".join(f"{n} dikembalikan" for n in undone_names)
             self._print(
                 messages.APPLY_FAIL_SUMMARY.format(
                     step=failed_step.name,
@@ -310,7 +306,7 @@ class Executor:
 
         # Sisa Step ditandai skipped
         for step, _ in remaining:
-            self._print(f" [-] (tidak ada Step tersisa)")
+            self._print(" [-] (tidak ada Step tersisa)")
             report.results.append(
                 StepResult(step_name=step.name, changes=[], skipped=True)
             )
