@@ -3,7 +3,7 @@
 ## Status tahap
 | Tahap | Status | Cabang | CI | Gerbang VM | Catatan |
 |---|---|---|---|---|---|
-| 1.1 | belum | | | n/a | |
+| 1.1 | selesai | tahap-1-1 | hijau | n/a | Persiapan repo, tooling, check.sh, ci.yml selesai |
 | 1.2 | belum | | | n/a | |
 | 1.3 | belum | | | n/a | |
 | 1.4 | belum | | | n/a | |
