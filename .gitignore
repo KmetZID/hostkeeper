@@ -1,9 +1,29 @@
-.venv/
+# Python cache
 __pycache__/
 *.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+
+# Tool caches & coverage
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
+
+# Sensitive and runtime data
+profile.yml
+watch.yml
+!*.example.yml
 .env
 *.key
 *.pem
+state.db
+audit.jsonl
+backups/
+journal/
