@@ -1,4 +1,4 @@
-# Contoh profil konfigurasi hostkeeper (v0.1)
+# Contoh profil konfigurasi hostkeeper v0.3
 version: 1
 
 # Hostname statis sistem (RFC 1123)
@@ -12,3 +12,27 @@ packages:
   - curl
   - htop
   - vim
+
+# User administrator lokal dengan hak akses sudo
+admin_user: deployer
+admin_sudo_nopasswd: true
+
+# Kunci publik SSH yang diizinkan untuk admin_user
+ssh_authorized_keys:
+  - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyForHostkeeperProfileDocOnly12345 user@example"
+
+# Pengaturan hardening layanan OpenSSH
+ssh:
+  port: 22
+  permit_root_login: "no"
+  password_auth: false
+
+# Pengaturan firewall nftables (tabel inet hostkeeper)
+firewall:
+  allow:
+    - 22/tcp
+    - 80/tcp
+    - 443/tcp
+
+# Pembaruan keamanan otomatis sistem (unattended-upgrades)
+unattended_upgrades: true

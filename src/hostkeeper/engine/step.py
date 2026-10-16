@@ -12,6 +12,10 @@ from hostkeeper.system.fileops import FileOps
 from hostkeeper.system.runner import Runner
 
 
+class UnsupportedEnvironmentError(Exception):
+    """Lingkungan sistem tidak didukung untuk menjalankan Step (exit code 5)."""
+
+
 class Risk(str, Enum):
     """Tingkat risiko dari sebuah Step."""
 

@@ -10,6 +10,8 @@ from unittest.mock import patch
 from hostkeeper import __version__
 from hostkeeper.cli import EXIT_DRIFT, EXIT_ENV, EXIT_LOCK, EXIT_OK, EXIT_USAGE, main
 from hostkeeper.engine.lock import LockConflict
+from hostkeeper.engine.step import CheckResult
+from hostkeeper.monitor.collector import Metric
 
 
 def _make_res(stdout: str) -> object:
@@ -224,3 +226,66 @@ def test_golden_errors_section_8_5(tmp_path: Path, monkeypatch: object) -> None:
                 code3 = main(["apply", "-c", str(good_prof)], out=out3)
                 assert code3 == EXIT_LOCK
                 assert "ERROR: hostkeeper lain sedang berjalan" in err3.getvalue()
+
+
+def test_golden_status_table_and_json(tmp_path: Path) -> None:
+    prof = tmp_path / "profile.yml"
+    prof.write_text("version: 1\nhostname: web-01\n", encoding="utf-8")
+
+    out_table = io.StringIO()
+    with patch(
+        "hostkeeper.cli.collect_all",
+        return_value=[
+            Metric(name="cpu.load1", value=0.15, unit="", status_hint="ok"),
+            Metric(name="mem.used_percent", value=50.0, unit="%", status_hint="ok"),
+        ],
+    ):
+        hn_res = CheckResult(
+            compliant=True,
+            current="web-01",
+        )
+        with patch(
+            "hostkeeper.steps.hostname.HostnameStep.check",
+            return_value=hn_res,
+        ):
+            code = main(
+                ["status", "-c", str(prof), "--no-color"],
+                out=out_table,
+            )
+            assert code == EXIT_OK
+            table = out_table.getvalue()
+            tgt = f"hostkeeper {__version__} status"
+            assert tgt in table
+            assert "METRIK SISTEM:" in table
+            assert "KESESUAIAN PROFIL:" in table
+            assert "[OK]" in table
+            assert "cpu.load1" in table
+            msg = "Semua metrik dan profil dalam kondisi OK"
+            assert msg in table
+
+    out_json = io.StringIO()
+    with patch(
+        "hostkeeper.cli.collect_all",
+        return_value=[
+            Metric(name="cpu.load1", value=0.15, unit="", status_hint="ok"),
+        ],
+    ):
+        hn_res = CheckResult(
+            compliant=True,
+            current="web-01",
+        )
+        with patch(
+            "hostkeeper.steps.hostname.HostnameStep.check",
+            return_value=hn_res,
+        ):
+            code_json = main(
+                ["status", "-c", str(prof), "--json"],
+                out=out_json,
+            )
+            assert code_json == EXIT_OK
+            data = json.loads(out_json.getvalue())
+            assert data["version"] == __version__
+            assert data["status"] == "ok"
+            assert data["summary"]["warn"] == 0
+            assert data["summary"]["crit"] == 0
+            assert data["summary"]["drift"] == 0

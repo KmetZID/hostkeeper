@@ -1,0 +1,10 @@
+[Unit]
+Description=hostkeeper periodic system watch timer
+Documentation=https://github.com/KmetZID/hostkeeper
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

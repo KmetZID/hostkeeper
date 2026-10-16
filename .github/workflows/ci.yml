@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: ["main"]
   pull_request:
 
 permissions:
@@ -83,6 +83,7 @@ jobs:
     needs: [lint, unit, no-extra-deps]
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         container:
           - "debian:12"
@@ -95,7 +96,7 @@ jobs:
       - name: Install git and sudo
         run: |
           apt-get update -qq
-          apt-get install -y --no-install-recommends git sudo
+          apt-get install -y --no-install-recommends ca-certificates git sudo
 
       - name: Checkout code
         uses: actions/checkout@v4
@@ -109,8 +110,8 @@ jobs:
       - name: Smoke test hostkeeper version
         run: /usr/local/bin/hostkeeper version
 
-      - name: Test hostkeeper plan on example profile
-        run: /usr/local/bin/hostkeeper plan -c tests/data/profile.example.yml
+      - name: Test hostkeeper plan on CI profile
+        run: /usr/local/bin/hostkeeper plan -c tests/data/profile.ci.yml
 
       - name: Uninstall hostkeeper
         run: ./uninstall.sh --yes

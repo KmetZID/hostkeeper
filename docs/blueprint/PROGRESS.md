@@ -14,11 +14,11 @@
 | 2.4 | selesai | tahap-2-1-to-2-6 | hijau | n/a | SafetyTimer via systemd-run timer, auto rollback, timeout |
 | 2.5 | selesai | tahap-2-1-to-2-6 | hijau | n/a | UpdatesStep, FirewallStep (nftables drop-in, systemd oneshot) |
 | 2.6 | selesai | tahap-2-1-to-2-6 | hijau | V2 | Wizard setup interaktif, atomic profile writing, mode 0600 |
-| 3.1 | belum | | | | |
-| 3.2 | belum | | | | |
-| 3.3 | belum | | | | |
-| 3.4 | belum | | | | |
-| 3.5 | belum | | | V3, V-FINAL | |
+| 3.1 | selesai | tahap-3-1-3-5 | hijau | n/a | Collector CPU/load, memory/swap, PSI, disk/inode, time sync, services, updates, SSH failed |
+| 3.2 | selesai | tahap-3-1-3-5 | hijau | n/a | Evaluator threshold/hysteresis, StateDB SQLite WAL, Notifier webhook masked |
+| 3.3 | selesai | tahap-3-1-3-5 | hijau | n/a | CLI watch run/enable/disable/test-notify, systemd unit timer |
+| 3.4 | selesai | tahap-3-1-3-5 | hijau | n/a | CLI status --json, profile compliance check, ReadOnlyRunner/FileOps, exit code 0/3 |
+| 3.5 | selesai | tahap-3-1-3-5 | hijau | V3, V-FINAL | Versi 0.3.0, README, ARCHITECTURE, SECURITY, CHANGELOG, watch.example.yml, dependabot, issue template |
 
 ## Keputusan di luar spesifikasi (tanggal, tahap, keputusan, alasan)
 - 2026-10-15, tahap 1.2: RealFileOps.write_atomic hanya memanggil os.chown jika dijalankan sebagai root (os.geteuid() == 0) dan menangani PermissionError jika non-root, agar unit test dapat berjalan pada lingkungan non-root tanpa sudo.
@@ -35,8 +35,17 @@
 - 2026-10-16, tahap 2.4: SafetyTimer menggunakan systemd-run timer transient (`hostkeeper-rollback-<run_id>`) untuk membatalkan perubahan secara otomatis jika koneksi terputus dan tidak dikonfirmasi dalam batas waktu tertentu.
 - 2026-10-16, tahap 2.5: FirewallStep menggunakan aturan nftables dengan tabel independen inet hostkeeper dan service oneshot /etc/systemd/system/hostkeeper-firewall.service tanpa mengedit /etc/nftables.conf bawaan sistem.
 - 2026-10-16, tahap 2.6: Wizard setup mengonversi data ke tipe YAML murni (misal tuple ke list) sebelum atomic write mode 0600 dan membuat file backup otomatis bertanda timestamp saat menimpa file profil lama.
+- 2026-10-16, tahap 3.1: MetricCollector membaca /proc filesystem secara langsung untuk metrik sistem (stat, meminfo, pressure, diskstats) untuk efisiensi tanpa memanggil binary eksternal tambahan.
+- 2026-10-16, tahap 3.2: StateDB menggunakan SQLite dalam mode WAL di /var/lib/hostkeeper/state.db dengan retensi otomatis untuk mencatat riwayat status dan hysteresis peringatan.
+- 2026-10-16, tahap 3.3: Watch daemon menggunakan pasangan systemd service dan timer (hostkeeper-watch.timer) dengan interval terkonfigurasi, serta menyediakan hostkeeper watch test-notify untuk memverifikasi integrasi webhook.
+- 2026-10-16, tahap 3.4: Hostkeeper status menggunakan ReadOnlyRunner dan ReadOnlyFileOps untuk memverifikasi kesesuaian profil secara aman tanpa efek samping pada sistem, mengembalikan exit code 3 jika terdeteksi status non-compliant.
+- 2026-10-16, tahap 3.5: Versi ditingkatkan ke 0.3.0 pada pyproject.toml dan __init__.py, serta dokumentasi arsitektur, panduan keamanan, dan template GitHub issues/dependabot dilengkapi untuk kesiapan open source.
+- 2026-10-16, CI fix (PR #6): Memasang paket ca-certificates pada langkah pra-checkout container di job install CI agar verifikasi sertifikat SSL git tidak gagal pada container minimal Debian/Ubuntu; menambahkan fail-fast: false pada matriks install; membatasi trigger push CI hanya ke branch main agar pull request tidak menjalankan CI dua kali.
+- 2026-10-16, CI install fix: SubprocessRunner menangkap FileNotFoundError (returncode 127, stderr "perintah tidak ditemukan: <argv[0]>") dan PermissionError (returncode 126); HostnameStep dan TimezoneStep menangani returncode 127 dengan UnsupportedEnvironmentError (exit code 5); job install CI menggunakan tests/data/profile.ci.yml minimal.
 
 ## Temuan dan pertanyaan terbuka
-
+- Step lain (UserStep, SshdStep, FirewallStep) serta collector profil 3.4 (check_profile_compliance) saat ini juga memiliki asumsi serupa bahwa perintah sistem terkait (seperti useradd, chpasswd, sshd, nft) selalu tersedia di lingkungan eksekusi dan belum menangani returncode 127 secara terkendali.
 
 ## Insiden
+- 2026-10-16: CI pada PR #6 gagal di job install pada seluruh matriks container dengan pesan "server certificate verification failed. CAfile: none CRLfile: none" saat checkout, akibat container minimal debian/ubuntu belum terpasang ca-certificates. Diselesaikan dengan menambahkan ca-certificates pada langkah pra-checkout.
+- 2026-10-16: CI pada PR #6 gagal di job install container tanpa systemd pada langkah hostkeeper plan -c tests/data/profile.example.yml (exit 1 karena FileNotFoundError 'hostnamectl' di debian/ubuntu-24.04, exit 2 di ubuntu-22.04 karena ketiadaan tzdata). Diselesaikan dengan menangkap FileNotFoundError/PermissionError di runner, exit 5 pada HostnameStep/TimezoneStep jika perintah hilang, dan mengalihkan langkah plan CI ke tests/data/profile.ci.yml.

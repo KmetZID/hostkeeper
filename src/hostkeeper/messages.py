@@ -54,6 +54,12 @@ HOSTNAME_WARN_CLOUD_INIT = (
     "/etc/cloud/ terdeteksi dan preserve_hostname tidak aktif, "
     "cloud-init bisa menimpa hostname saat reboot"
 )
+STEP_HOSTNAME_SYSTEMD_REQUIRED = (
+    "Perintah 'hostnamectl' tidak ditemukan. Step hostname membutuhkan systemd."
+)
+STEP_TIMEZONE_SYSTEMD_REQUIRED = (
+    "Perintah 'timedatectl' tidak ditemukan. Step timezone membutuhkan systemd."
+)
 
 # Planner & dependency errors
 DEPENDENCY_CYCLE = "Siklus dependensi terdeteksi antar Step: {cycle}"
@@ -200,3 +206,19 @@ WIZARD_BACKUP_CREATED = "Backup profil lama: {path}"
 WIZARD_INVALID_INPUT = "Input tidak valid: {detail}. Coba lagi."
 WIZARD_CANCELLED = "Setup dibatalkan."
 WIZARD_SKIP_COMPLIANT = "  [~] {field} sudah sesuai, dilewati."
+
+# Watch & Monitoring messages
+WATCH_CYCLE_SKIPPED = "Siklus watch dilewati: instance hostkeeper lain sedang berjalan."
+WATCH_TIMER_ENABLED = "hostkeeper-watch.timer diaktifkan."
+WATCH_TIMER_DISABLED = "hostkeeper-watch.timer dinonaktifkan."
+WATCH_NO_WEBHOOK_URL = "URL webhook belum dikonfigurasi di {path}"
+WATCH_TEST_SUCCESS = "Notifikasi uji coba berhasil dikirim ke {url}."
+WATCH_TEST_FAILED = "Gagal mengirim notifikasi uji coba ke {url}."
+
+# Status messages
+STATUS_HEADER = "hostkeeper {version} status"
+STATUS_SUMMARY_OK = "Ringkasan: Semua metrik dan profil dalam kondisi OK."
+STATUS_SUMMARY_ISSUES = (
+    "Ringkasan: Ditemukan {warn} peringatan, {crit} kritis, {drift} drift profil."
+)
+ERR_FEATURE_UNAVAILABLE = "Perintah ini tidak tersedia."

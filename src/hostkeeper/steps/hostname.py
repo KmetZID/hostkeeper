@@ -6,7 +6,13 @@ from pathlib import Path
 from typing import ClassVar
 
 from hostkeeper import messages
-from hostkeeper.engine.step import Change, CheckResult, Risk, Step
+from hostkeeper.engine.step import (
+    Change,
+    CheckResult,
+    Risk,
+    Step,
+    UnsupportedEnvironmentError,
+)
 
 
 class HostnameStep(Step):
@@ -24,6 +30,8 @@ class HostnameStep(Step):
     def check(self) -> CheckResult:
         """Membaca hostname statis saat ini secara murni (read-only)."""
         res = self.runner.run(["hostnamectl", "--static"], mutates=False)
+        if res.returncode == 127:
+            raise UnsupportedEnvironmentError(messages.STEP_HOSTNAME_SYSTEMD_REQUIRED)
         current = res.stdout.strip()
         target = self.profile.hostname or ""
         compliant = current == target
@@ -53,6 +61,8 @@ class HostnameStep(Step):
             ["hostnamectl", "set-hostname", self.profile.hostname],
             mutates=True,
         )
+        if res.returncode == 127:
+            raise UnsupportedEnvironmentError(messages.STEP_HOSTNAME_SYSTEMD_REQUIRED)
         if not res.ok:
             raise RuntimeError(f"hostnamectl set-hostname gagal: {res.stderr.strip()}")
 
@@ -82,7 +92,11 @@ class HostnameStep(Step):
         """Mengembalikan hostname lama yang tercatat pada changes."""
         for change in changes:
             if change.target == "hostname" and change.before:
-                self.runner.run(
+                res = self.runner.run(
                     ["hostnamectl", "set-hostname", change.before],
                     mutates=True,
                 )
+                if res.returncode == 127:
+                    raise UnsupportedEnvironmentError(
+                        messages.STEP_HOSTNAME_SYSTEMD_REQUIRED
+                    )

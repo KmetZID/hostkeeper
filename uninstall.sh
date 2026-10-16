@@ -71,6 +71,12 @@ fi
 
 echo "Peringatan: uninstall tidak membalik perubahan konfigurasi sistem yang pernah diterapkan."
 
+# Matikan timer monitoring bila aktif
+if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
+    run systemctl disable --now hostkeeper-watch.timer >/dev/null 2>&1 || true
+    run systemctl stop hostkeeper-watch.service >/dev/null 2>&1 || true
+fi
+
 # Hapus file berdasarkan MANIFEST jika ada
 if [[ -f "$MANIFEST" ]]; then
     while IFS= read -r item || [[ -n "$item" ]]; do
