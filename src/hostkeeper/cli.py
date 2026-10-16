@@ -20,6 +20,7 @@ from hostkeeper.engine.journal import JournalWriter
 from hostkeeper.engine.lock import LockConflict, LockManager
 from hostkeeper.engine.planner import Planner
 from hostkeeper.engine.rollback import RollbackError, RollbackManager
+from hostkeeper.engine.step import UnsupportedEnvironmentError
 from hostkeeper.env import detect_env
 from hostkeeper.monitor.collector import CollectContext, Metric, collect_all
 from hostkeeper.monitor.evaluator import Evaluator
@@ -830,6 +831,14 @@ def main(argv: Sequence[str] | None = None, out: IO[str] = sys.stdout) -> int:
             file=sys.stderr,
         )
         return EXIT_USAGE
+    except UnsupportedEnvironmentError as exc:
+        if verbose:
+            traceback.print_exc(file=sys.stderr)
+        print(
+            f"ERROR: {exc}",
+            file=sys.stderr,
+        )
+        return EXIT_ENV
     except Exception as exc:
         if verbose:
             traceback.print_exc(file=sys.stderr)

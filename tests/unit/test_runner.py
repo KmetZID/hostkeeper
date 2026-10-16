@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -168,3 +169,48 @@ def test_fake_runner_init_with_responses() -> None:
     res2 = runner.run(["uptime"])
     assert res2.ok is True
     assert res2.stdout == "up 1 day"
+
+
+def test_subprocess_runner_file_not_found() -> None:
+    runner = SubprocessRunner()
+    result = runner.run(["perintah_fiktif_12345"])
+    assert result.ok is False
+    assert result.returncode == 127
+    assert result.stderr == "perintah tidak ditemukan: perintah_fiktif_12345"
+    assert result.stdout == ""
+    assert result.timed_out is False
+    assert result.argv == ("perintah_fiktif_12345",)
+    assert result.duration >= 0.0
+
+
+def test_subprocess_runner_permission_error(tmp_path: Path) -> None:
+    runner = SubprocessRunner()
+    script = tmp_path / "not_executable.sh"
+    script.write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
+    script.chmod(0o644)
+    result = runner.run([str(script)])
+    assert result.ok is False
+    assert result.returncode == 126
+    assert result.stdout == ""
+    assert result.timed_out is False
+    assert result.argv == (str(script),)
+    assert result.duration >= 0.0
+
+
+def test_readonly_runner_forwards_file_not_found_and_permission_error(
+    tmp_path: Path,
+) -> None:
+    inner = SubprocessRunner()
+    ro_runner = ReadOnlyRunner(inner)
+
+    res_fnf = ro_runner.run(["perintah_fiktif_12345"], mutates=False)
+    assert res_fnf.ok is False
+    assert res_fnf.returncode == 127
+    assert res_fnf.stderr == "perintah tidak ditemukan: perintah_fiktif_12345"
+
+    script = tmp_path / "not_executable.sh"
+    script.write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
+    script.chmod(0o644)
+    res_perm = ro_runner.run([str(script)], mutates=False)
+    assert res_perm.ok is False
+    assert res_perm.returncode == 126

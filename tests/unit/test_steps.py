@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from hostkeeper.engine.step import Change, Risk
+from hostkeeper.engine.step import Change, Risk, UnsupportedEnvironmentError
 from hostkeeper.profile import Profile
 from hostkeeper.steps import REGISTRY, HostnameStep, TimezoneStep
 from hostkeeper.system.fakes import FakeFileOps, FakeRunner
@@ -279,6 +279,80 @@ def test_hostname_step_verify_warnings() -> None:
     assert v_res.compliant is True
     assert "getent hosts gagal" in v_res.detail
     assert "preserve_hostname" in v_res.detail
+
+
+def test_hostname_step_command_not_found_raises_unsupported_environment() -> None:
+    prof = Profile(version=1, hostname="web-01")
+    runner = FakeRunner()
+    runner.register(["hostnamectl", "--static"], "", returncode=127)
+    fs = FakeFileOps()
+    step = HostnameStep(prof, runner, fs)
+
+    with pytest.raises(
+        UnsupportedEnvironmentError,
+        match=(
+            "Perintah 'hostnamectl' tidak ditemukan. Step hostname membutuhkan systemd."
+        ),
+    ):
+        step.check()
+
+    runner.register(["hostnamectl", "set-hostname", "web-01"], "", returncode=127)
+    with pytest.raises(
+        UnsupportedEnvironmentError,
+        match=(
+            "Perintah 'hostnamectl' tidak ditemukan. Step hostname membutuhkan systemd."
+        ),
+    ):
+        step.apply(
+            [
+                Change(
+                    step="hostname",
+                    action="set",
+                    target="hostname",
+                    before="web-old",
+                    after="web-01",
+                )
+            ]
+        )
+
+
+def test_timezone_step_command_not_found_raises_unsupported_environment() -> None:
+    prof = Profile(version=1, timezone="Asia/Jakarta")
+    runner = FakeRunner()
+    runner.register(
+        ["timedatectl", "show", "-p", "Timezone", "--value"],
+        "",
+        returncode=127,
+    )
+    fs = FakeFileOps()
+    step = TimezoneStep(prof, runner, fs)
+
+    with pytest.raises(
+        UnsupportedEnvironmentError,
+        match=(
+            "Perintah 'timedatectl' tidak ditemukan. Step timezone membutuhkan systemd."
+        ),
+    ):
+        step.check()
+
+    runner.register(["timedatectl", "set-timezone", "Asia/Jakarta"], "", returncode=127)
+    with pytest.raises(
+        UnsupportedEnvironmentError,
+        match=(
+            "Perintah 'timedatectl' tidak ditemukan. Step timezone membutuhkan systemd."
+        ),
+    ):
+        step.apply(
+            [
+                Change(
+                    step="timezone",
+                    action="set",
+                    target="timezone",
+                    before="UTC",
+                    after="Asia/Jakarta",
+                )
+            ]
+        )
 
 
 def test_timezone_step_full_lifecycle() -> None:

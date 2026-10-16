@@ -97,6 +97,28 @@ class SubprocessRunner:
                 duration=duration,
                 timed_out=True,
             )
+        except FileNotFoundError:
+            duration = time.monotonic() - start
+            cmd_name = argv_tuple[0] if argv_tuple else ""
+            return CmdResult(
+                argv=argv_tuple,
+                returncode=127,
+                stdout="",
+                stderr=f"perintah tidak ditemukan: {cmd_name}",
+                duration=duration,
+                timed_out=False,
+            )
+        except PermissionError:
+            duration = time.monotonic() - start
+            cmd_name = argv_tuple[0] if argv_tuple else ""
+            return CmdResult(
+                argv=argv_tuple,
+                returncode=126,
+                stdout="",
+                stderr=f"izin ditolak: {cmd_name}",
+                duration=duration,
+                timed_out=False,
+            )
 
 
 class ReadOnlyRunner:

@@ -54,6 +54,12 @@ HOSTNAME_WARN_CLOUD_INIT = (
     "/etc/cloud/ terdeteksi dan preserve_hostname tidak aktif, "
     "cloud-init bisa menimpa hostname saat reboot"
 )
+STEP_HOSTNAME_SYSTEMD_REQUIRED = (
+    "Perintah 'hostnamectl' tidak ditemukan. Step hostname membutuhkan systemd."
+)
+STEP_TIMEZONE_SYSTEMD_REQUIRED = (
+    "Perintah 'timedatectl' tidak ditemukan. Step timezone membutuhkan systemd."
+)
 
 # Planner & dependency errors
 DEPENDENCY_CYCLE = "Siklus dependensi terdeteksi antar Step: {cycle}"

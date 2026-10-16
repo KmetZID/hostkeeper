@@ -41,9 +41,11 @@
 - 2026-10-16, tahap 3.4: Hostkeeper status menggunakan ReadOnlyRunner dan ReadOnlyFileOps untuk memverifikasi kesesuaian profil secara aman tanpa efek samping pada sistem, mengembalikan exit code 3 jika terdeteksi status non-compliant.
 - 2026-10-16, tahap 3.5: Versi ditingkatkan ke 0.3.0 pada pyproject.toml dan __init__.py, serta dokumentasi arsitektur, panduan keamanan, dan template GitHub issues/dependabot dilengkapi untuk kesiapan open source.
 - 2026-10-16, CI fix (PR #6): Memasang paket ca-certificates pada langkah pra-checkout container di job install CI agar verifikasi sertifikat SSL git tidak gagal pada container minimal Debian/Ubuntu; menambahkan fail-fast: false pada matriks install; membatasi trigger push CI hanya ke branch main agar pull request tidak menjalankan CI dua kali.
+- 2026-10-16, CI install fix: SubprocessRunner menangkap FileNotFoundError (returncode 127, stderr "perintah tidak ditemukan: <argv[0]>") dan PermissionError (returncode 126); HostnameStep dan TimezoneStep menangani returncode 127 dengan UnsupportedEnvironmentError (exit code 5); job install CI menggunakan tests/data/profile.ci.yml minimal.
 
 ## Temuan dan pertanyaan terbuka
-
+- Step lain (UserStep, SshdStep, FirewallStep) serta collector profil 3.4 (check_profile_compliance) saat ini juga memiliki asumsi serupa bahwa perintah sistem terkait (seperti useradd, chpasswd, sshd, nft) selalu tersedia di lingkungan eksekusi dan belum menangani returncode 127 secara terkendali.
 
 ## Insiden
 - 2026-10-16: CI pada PR #6 gagal di job install pada seluruh matriks container dengan pesan "server certificate verification failed. CAfile: none CRLfile: none" saat checkout, akibat container minimal debian/ubuntu belum terpasang ca-certificates. Diselesaikan dengan menambahkan ca-certificates pada langkah pra-checkout.
+- 2026-10-16: CI pada PR #6 gagal di job install container tanpa systemd pada langkah hostkeeper plan -c tests/data/profile.example.yml (exit 1 karena FileNotFoundError 'hostnamectl' di debian/ubuntu-24.04, exit 2 di ubuntu-22.04 karena ketiadaan tzdata). Diselesaikan dengan menangkap FileNotFoundError/PermissionError di runner, exit 5 pada HostnameStep/TimezoneStep jika perintah hilang, dan mengalihkan langkah plan CI ke tests/data/profile.ci.yml.

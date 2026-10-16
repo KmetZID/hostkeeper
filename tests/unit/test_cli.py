@@ -179,3 +179,59 @@ def test_cli_error_with_verbose_shows_traceback(
         assert code == 1
         err = err_stream.getvalue()
         assert "Traceback (most recent call last):" in err
+
+
+def test_cli_plan_hostnamectl_not_found_exits_5(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    prof_file = tmp_path / "profile.yml"
+    prof_file.write_text("version: 1\nhostname: web-01\n", encoding="utf-8")
+    err_stream = io.StringIO()
+    monkeypatch.setattr("sys.stderr", err_stream)
+
+    from hostkeeper.system.runner import CmdResult
+
+    with patch(
+        "hostkeeper.cli.SubprocessRunner.run",
+        return_value=CmdResult(
+            argv=("hostnamectl", "--static"),
+            returncode=127,
+            stdout="",
+            stderr="perintah tidak ditemukan: hostnamectl",
+            duration=0.01,
+        ),
+    ):
+        code = main(["plan", "-c", str(prof_file)])
+        assert code == EXIT_ENV
+        err = err_stream.getvalue()
+        assert (
+            "Perintah 'hostnamectl' tidak ditemukan. Step hostname membutuhkan systemd."
+        ) in err
+
+
+def test_cli_plan_timedatectl_not_found_exits_5(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    prof_file = tmp_path / "profile.yml"
+    prof_file.write_text("version: 1\ntimezone: UTC\n", encoding="utf-8")
+    err_stream = io.StringIO()
+    monkeypatch.setattr("sys.stderr", err_stream)
+
+    from hostkeeper.system.runner import CmdResult
+
+    with patch(
+        "hostkeeper.cli.SubprocessRunner.run",
+        return_value=CmdResult(
+            argv=("timedatectl", "show", "-p", "Timezone", "--value"),
+            returncode=127,
+            stdout="",
+            stderr="perintah tidak ditemukan: timedatectl",
+            duration=0.01,
+        ),
+    ):
+        code = main(["plan", "-c", str(prof_file)])
+        assert code == EXIT_ENV
+        err = err_stream.getvalue()
+        assert (
+            "Perintah 'timedatectl' tidak ditemukan. Step timezone membutuhkan systemd."
+        ) in err

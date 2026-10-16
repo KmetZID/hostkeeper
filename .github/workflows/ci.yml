@@ -110,8 +110,8 @@ jobs:
       - name: Smoke test hostkeeper version
         run: /usr/local/bin/hostkeeper version
 
-      - name: Test hostkeeper plan on example profile
-        run: /usr/local/bin/hostkeeper plan -c tests/data/profile.example.yml
+      - name: Test hostkeeper plan on CI profile
+        run: /usr/local/bin/hostkeeper plan -c tests/data/profile.ci.yml
 
       - name: Uninstall hostkeeper
         run: ./uninstall.sh --yes

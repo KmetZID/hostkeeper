@@ -5,7 +5,13 @@ from __future__ import annotations
 from typing import ClassVar
 
 from hostkeeper import messages
-from hostkeeper.engine.step import Change, CheckResult, Risk, Step
+from hostkeeper.engine.step import (
+    Change,
+    CheckResult,
+    Risk,
+    Step,
+    UnsupportedEnvironmentError,
+)
 
 
 class TimezoneStep(Step):
@@ -26,6 +32,8 @@ class TimezoneStep(Step):
             ["timedatectl", "show", "-p", "Timezone", "--value"],
             mutates=False,
         )
+        if res.returncode == 127:
+            raise UnsupportedEnvironmentError(messages.STEP_TIMEZONE_SYSTEMD_REQUIRED)
         current = res.stdout.strip()
         target = self.profile.timezone or ""
         compliant = current == target
@@ -55,6 +63,8 @@ class TimezoneStep(Step):
             ["timedatectl", "set-timezone", self.profile.timezone],
             mutates=True,
         )
+        if res.returncode == 127:
+            raise UnsupportedEnvironmentError(messages.STEP_TIMEZONE_SYSTEMD_REQUIRED)
         if not res.ok:
             raise RuntimeError(f"timedatectl set-timezone gagal: {res.stderr.strip()}")
 
@@ -66,7 +76,11 @@ class TimezoneStep(Step):
         """Mengembalikan timezone lama yang tercatat pada changes."""
         for change in changes:
             if change.target == "timezone" and change.before:
-                self.runner.run(
+                res = self.runner.run(
                     ["timedatectl", "set-timezone", change.before],
                     mutates=True,
                 )
+                if res.returncode == 127:
+                    raise UnsupportedEnvironmentError(
+                        messages.STEP_TIMEZONE_SYSTEMD_REQUIRED
+                    )
