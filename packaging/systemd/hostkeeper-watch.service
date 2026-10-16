@@ -1,0 +1,12 @@
+[Unit]
+Description=hostkeeper periodic system watch
+Documentation=https://github.com/KmetZID/hostkeeper
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/hostkeeper watch run
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/hostkeeper /var/log/hostkeeper /run

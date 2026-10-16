@@ -14,11 +14,11 @@
 | 2.4 | selesai | tahap-2-1-to-2-6 | hijau | n/a | SafetyTimer via systemd-run timer, auto rollback, timeout |
 | 2.5 | selesai | tahap-2-1-to-2-6 | hijau | n/a | UpdatesStep, FirewallStep (nftables drop-in, systemd oneshot) |
 | 2.6 | selesai | tahap-2-1-to-2-6 | hijau | V2 | Wizard setup interaktif, atomic profile writing, mode 0600 |
-| 3.1 | belum | | | | |
-| 3.2 | belum | | | | |
-| 3.3 | belum | | | | |
-| 3.4 | belum | | | | |
-| 3.5 | belum | | | V3, V-FINAL | |
+| 3.1 | selesai | tahap-3-1-3-5 | hijau | n/a | Collector CPU/load, memory/swap, PSI, disk/inode, time sync, services, updates, SSH failed |
+| 3.2 | selesai | tahap-3-1-3-5 | hijau | n/a | Evaluator threshold/hysteresis, StateDB SQLite WAL, Notifier webhook masked |
+| 3.3 | selesai | tahap-3-1-3-5 | hijau | n/a | CLI watch run/enable/disable/test-notify, systemd unit timer |
+| 3.4 | selesai | tahap-3-1-3-5 | hijau | n/a | CLI status --json, profile compliance check, ReadOnlyRunner/FileOps, exit code 0/3 |
+| 3.5 | selesai | tahap-3-1-3-5 | hijau | V3, V-FINAL | Versi 0.3.0, README, ARCHITECTURE, SECURITY, CHANGELOG, watch.example.yml, dependabot, issue template |
 
 ## Keputusan di luar spesifikasi (tanggal, tahap, keputusan, alasan)
 - 2026-10-15, tahap 1.2: RealFileOps.write_atomic hanya memanggil os.chown jika dijalankan sebagai root (os.geteuid() == 0) dan menangani PermissionError jika non-root, agar unit test dapat berjalan pada lingkungan non-root tanpa sudo.
@@ -35,6 +35,11 @@
 - 2026-10-16, tahap 2.4: SafetyTimer menggunakan systemd-run timer transient (`hostkeeper-rollback-<run_id>`) untuk membatalkan perubahan secara otomatis jika koneksi terputus dan tidak dikonfirmasi dalam batas waktu tertentu.
 - 2026-10-16, tahap 2.5: FirewallStep menggunakan aturan nftables dengan tabel independen inet hostkeeper dan service oneshot /etc/systemd/system/hostkeeper-firewall.service tanpa mengedit /etc/nftables.conf bawaan sistem.
 - 2026-10-16, tahap 2.6: Wizard setup mengonversi data ke tipe YAML murni (misal tuple ke list) sebelum atomic write mode 0600 dan membuat file backup otomatis bertanda timestamp saat menimpa file profil lama.
+- 2026-10-16, tahap 3.1: MetricCollector membaca /proc filesystem secara langsung untuk metrik sistem (stat, meminfo, pressure, diskstats) untuk efisiensi tanpa memanggil binary eksternal tambahan.
+- 2026-10-16, tahap 3.2: StateDB menggunakan SQLite dalam mode WAL di /var/lib/hostkeeper/state.db dengan retensi otomatis untuk mencatat riwayat status dan hysteresis peringatan.
+- 2026-10-16, tahap 3.3: Watch daemon menggunakan pasangan systemd service dan timer (hostkeeper-watch.timer) dengan interval terkonfigurasi, serta menyediakan hostkeeper watch test-notify untuk memverifikasi integrasi webhook.
+- 2026-10-16, tahap 3.4: Hostkeeper status menggunakan ReadOnlyRunner dan ReadOnlyFileOps untuk memverifikasi kesesuaian profil secara aman tanpa efek samping pada sistem, mengembalikan exit code 3 jika terdeteksi status non-compliant.
+- 2026-10-16, tahap 3.5: Versi ditingkatkan ke 0.3.0 pada pyproject.toml dan __init__.py, serta dokumentasi arsitektur, panduan keamanan, dan template GitHub issues/dependabot dilengkapi untuk kesiapan open source.
 
 ## Temuan dan pertanyaan terbuka
 

@@ -29,12 +29,10 @@ def test_cli_version() -> None:
     assert "Python  :" in text
 
 
-def test_cli_subcommand_stubs() -> None:
-    stubs = ["watch", "status"]
-    for sub in stubs:
-        out = io.StringIO()
-        code = main([sub], out=out)
-        assert code == EXIT_USAGE
+def test_cli_watch_requires_subcommand() -> None:
+    out = io.StringIO()
+    code = main(["watch"], out=out)
+    assert code == EXIT_USAGE
 
 
 def test_cli_rollback_non_root_returns_exit_5() -> None:

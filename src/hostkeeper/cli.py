@@ -6,9 +6,12 @@ import argparse
 import os
 import socket
 import sys
+import time
 import traceback
 from pathlib import Path
 from typing import IO, Sequence
+
+import yaml
 
 from hostkeeper import __version__, messages
 from hostkeeper.engine.audit import AuditWriter
@@ -18,10 +21,26 @@ from hostkeeper.engine.lock import LockConflict, LockManager
 from hostkeeper.engine.planner import Planner
 from hostkeeper.engine.rollback import RollbackError, RollbackManager
 from hostkeeper.env import detect_env
+from hostkeeper.monitor.collector import CollectContext, Metric, collect_all
+from hostkeeper.monitor.evaluator import Evaluator
+from hostkeeper.monitor.notify import (
+    check_watch_config_permissions,
+    format_payload,
+    mask_url,
+    send_webhook,
+)
+from hostkeeper.monitor.profile_checker import (
+    StepCompliance,
+    check_profile_compliance,
+    load_profile_if_exists,
+)
+from hostkeeper.monitor.state import StateManager
 from hostkeeper.output import (
     format_plan_summary,
     print_plan_json,
     print_plan_table,
+    print_status_json,
+    print_status_table,
     print_verify_json,
     print_verify_table,
 )
@@ -173,11 +192,74 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Alasan rollback (default: manual)",
     )
 
-    for stub_name, stub_help in [
-        ("watch", "Monitoring (v0.2)"),
-        ("status", "Kartu kesehatan (v0.3)"),
-    ]:
-        subparsers.add_parser(stub_name, parents=[common], help=stub_help)
+    # watch
+    watch_p = subparsers.add_parser(
+        "watch",
+        parents=[common],
+        help="Monitoring sistem berkala",
+    )
+    watch_sub = watch_p.add_subparsers(dest="watch_command")
+
+    watch_run_p = watch_sub.add_parser(
+        "run",
+        parents=[common],
+        help="Jalankan satu siklus monitoring",
+    )
+    watch_run_p.add_argument(
+        "--watch-config",
+        default="/etc/hostkeeper/watch.yml",
+        help="Path ke file watch.yml",
+    )
+    watch_run_p.add_argument(
+        "--state-db",
+        default="/var/lib/hostkeeper/state.db",
+        help="Path ke file state.db",
+    )
+    watch_run_p.add_argument(
+        "--lock-path",
+        default="/run/hostkeeper.lock",
+        help="Path ke file lock",
+    )
+
+    watch_sub.add_parser(
+        "enable",
+        parents=[common],
+        help="Aktifkan timer monitoring systemd",
+    )
+
+    watch_sub.add_parser(
+        "disable",
+        parents=[common],
+        help="Nonaktifkan timer monitoring systemd",
+    )
+
+    watch_test_p = watch_sub.add_parser(
+        "test-notify",
+        parents=[common],
+        help="Uji coba pengiriman webhook",
+    )
+    watch_test_p.add_argument(
+        "--watch-config",
+        default="/etc/hostkeeper/watch.yml",
+        help="Path ke file watch.yml",
+    )
+
+    # status
+    status_p = subparsers.add_parser(
+        "status",
+        parents=[common],
+        help="Kartu kesehatan dan kesesuaian profil",
+    )
+    status_p.add_argument(
+        "--watch-config",
+        default="/etc/hostkeeper/watch.yml",
+        help="Path ke file watch.yml",
+    )
+    status_p.add_argument(
+        "--state-db",
+        default="/var/lib/hostkeeper/state.db",
+        help="Path ke file state.db",
+    )
 
     # setup
     subparsers.add_parser(
@@ -485,6 +567,231 @@ def cmd_setup(args: argparse.Namespace, out: IO[str] = sys.stdout) -> int:
     return EXIT_OK
 
 
+def cmd_watch(args: argparse.Namespace, out: IO[str] = sys.stdout) -> int:
+    """Menangani subperintah hostkeeper watch."""
+    watch_cmd = getattr(args, "watch_command", None)
+
+    if watch_cmd == "enable":
+        runner = SubprocessRunner()
+        res = runner.run(
+            ["systemctl", "enable", "--now", "hostkeeper-watch.timer"],
+            mutates=True,
+        )
+        if res.ok:
+            print(messages.WATCH_TIMER_ENABLED, file=out)
+            return EXIT_OK
+        print(f"ERROR: {res.stderr or res.stdout}", file=sys.stderr)
+        return EXIT_ERROR
+
+    elif watch_cmd == "disable":
+        runner = SubprocessRunner()
+        res = runner.run(
+            ["systemctl", "disable", "--now", "hostkeeper-watch.timer"],
+            mutates=True,
+        )
+        if res.ok:
+            print(messages.WATCH_TIMER_DISABLED, file=out)
+            return EXIT_OK
+        print(f"ERROR: {res.stderr or res.stdout}", file=sys.stderr)
+        return EXIT_ERROR
+
+    elif watch_cmd == "test-notify":
+        watch_cfg_path = Path(
+            getattr(args, "watch_config", "/etc/hostkeeper/watch.yml")
+        )
+        check_watch_config_permissions(watch_cfg_path, out_err=sys.stderr)
+        if not watch_cfg_path.is_file():
+            print(
+                messages.WATCH_NO_WEBHOOK_URL.format(path=watch_cfg_path),
+                file=sys.stderr,
+            )
+            return EXIT_USAGE
+
+        webhook_url = ""
+        fmt = "slack"
+        try:
+            raw = yaml.safe_load(watch_cfg_path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                webhook_url = str(raw.get("webhook_url", "")).strip()
+                fmt = str(raw.get("webhook_format", "slack")).strip()
+        except Exception as exc:
+            print(f"ERROR: Format {watch_cfg_path} tidak valid: {exc}", file=sys.stderr)
+            return EXIT_USAGE
+
+        if not webhook_url:
+            print(
+                messages.WATCH_NO_WEBHOOK_URL.format(path=watch_cfg_path),
+                file=sys.stderr,
+            )
+            return EXIT_USAGE
+
+        hostname = socket.gethostname()
+        payload = format_payload(
+            fmt,
+            hostname,
+            ["Uji coba notifikasi hostkeeper watch."],
+            level="ok",
+        )
+        ok = send_webhook(webhook_url, payload, out_err=sys.stderr)
+        masked = mask_url(webhook_url)
+        if ok:
+            print(messages.WATCH_TEST_SUCCESS.format(url=masked), file=out)
+            return EXIT_OK
+        else:
+            print(messages.WATCH_TEST_FAILED.format(url=masked), file=sys.stderr)
+            return EXIT_ERROR
+
+    elif watch_cmd == "run":
+        # Ambil lock non-blocking
+        lock_file = Path(getattr(args, "lock_path", "/run/hostkeeper.lock"))
+        lock = LockManager(lock_file)
+        try:
+            lock.acquire()
+        except LockConflict:
+            print(messages.WATCH_CYCLE_SKIPPED, file=out)
+            return EXIT_OK
+
+        try:
+            ctx = CollectContext()
+            metrics = collect_all(ctx)
+
+            # Cek profil jika ada
+            profile_path = Path(args.config)
+            prof = load_profile_if_exists(profile_path)
+            if prof is not None:
+                prof_metrics, _ = check_profile_compliance(
+                    prof, ctx.runner, ctx.fileops
+                )
+                metrics.extend(prof_metrics)
+
+            state_db_path = Path(
+                getattr(args, "state_db", "/var/lib/hostkeeper/state.db")
+            )
+            state = StateManager(state_db_path)
+            now_ts = time.time()
+            state.save_metrics(metrics, ts=now_ts)
+
+            previous_alerts = state.get_alerts()
+            watch_cfg_path = Path(
+                getattr(args, "watch_config", "/etc/hostkeeper/watch.yml")
+            )
+            check_watch_config_permissions(watch_cfg_path, out_err=sys.stderr)
+            evaluator = Evaluator(watch_cfg_path)
+            results = evaluator.evaluate(
+                metrics, previous_alerts=previous_alerts, now=now_ts
+            )
+
+            # Identifikasi alert yang perlu dinotifikasikan
+            alerts_to_notify: list[str] = []
+            highest_level = "ok"
+
+            for r in results:
+                if r.alert_needed:
+                    alerts_to_notify.append(r.message)
+                    if r.status == "crit":
+                        highest_level = "crit"
+                    elif r.status == "warn" and highest_level != "crit":
+                        highest_level = "warn"
+
+                if r.is_transition:
+                    if r.status == "ok":
+                        state.clear_alert(r.metric_name)
+                    else:
+                        state.set_alert(
+                            r.metric_name,
+                            status=r.status,
+                            since=now_ts,
+                            last_notified=now_ts,
+                        )
+
+            # Kirim webhook jika ada alert
+            if alerts_to_notify and watch_cfg_path.is_file():
+                try:
+                    raw = yaml.safe_load(watch_cfg_path.read_text(encoding="utf-8"))
+                    if isinstance(raw, dict) and raw.get("webhook_url"):
+                        webhook_url = str(raw["webhook_url"]).strip()
+                        fmt = str(raw.get("webhook_format", "slack")).strip()
+                        hostname = socket.gethostname()
+                        payload = format_payload(
+                            fmt,
+                            hostname,
+                            alerts_to_notify,
+                            level=highest_level,
+                        )
+                        send_webhook(webhook_url, payload, out_err=sys.stderr)
+                except Exception:
+                    pass
+
+            state.prune_retention(now=now_ts)
+            return EXIT_OK
+        finally:
+            lock.release()
+
+    else:
+        print(
+            "Subperintah watch dibutuhkan: run, enable, disable, test-notify",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+
+
+def cmd_status(args: argparse.Namespace, out: IO[str] = sys.stdout) -> int:
+    """Menampilkan status kesehatan metrik sistem dan kesesuaian profil."""
+    ctx = CollectContext()
+    metrics = collect_all(ctx)
+
+    watch_cfg_path = Path(getattr(args, "watch_config", "/etc/hostkeeper/watch.yml"))
+    evaluator = Evaluator(watch_cfg_path)
+    eval_results = evaluator.evaluate(metrics, previous_alerts={})
+    eval_map = {r.metric_name: r for r in eval_results}
+
+    metrics_evaluated: list[Metric] = []
+    for m in metrics:
+        evaluated_status = (
+            eval_map[m.name].status if m.name in eval_map else m.status_hint
+        )
+        metrics_evaluated.append(
+            Metric(
+                name=m.name,
+                value=m.value,
+                unit=m.unit,
+                status_hint=evaluated_status,
+            )
+        )
+
+    profile_path = Path(args.config)
+    prof = load_profile_if_exists(profile_path)
+    compliances: list[StepCompliance] = []
+    if prof is not None:
+        _, compliances = check_profile_compliance(prof, ctx.runner, ctx.fileops)
+
+    hostname = socket.gethostname()
+    json_mode: bool = getattr(args, "json", False)
+    no_color: bool = getattr(args, "no_color", False)
+
+    if json_mode:
+        warn_cnt, crit_cnt, drift_cnt = print_status_json(
+            __version__,
+            hostname,
+            metrics_evaluated,
+            compliances,
+            out=out,
+        )
+    else:
+        warn_cnt, crit_cnt, drift_cnt = print_status_table(
+            __version__,
+            hostname,
+            metrics_evaluated,
+            compliances,
+            no_color=no_color,
+            out=out,
+        )
+
+    if warn_cnt > 0 or crit_cnt > 0 or drift_cnt > 0:
+        return EXIT_DRIFT
+    return EXIT_OK
+
+
 def main(argv: Sequence[str] | None = None, out: IO[str] = sys.stdout) -> int:
     """Entrypoint utama CLI. Mengembalikan exit code."""
     parser = _build_parser()
@@ -495,15 +802,6 @@ def main(argv: Sequence[str] | None = None, out: IO[str] = sys.stdout) -> int:
 
     verbose: bool = getattr(args, "verbose", False)
     command = getattr(args, "command", None)
-
-    # Stub subcommands
-    stubs = {
-        "watch": messages.STUB_WATCH,
-        "status": messages.STUB_STATUS,
-    }
-    if command in stubs:
-        print(stubs[command], file=sys.stderr)
-        return EXIT_USAGE
 
     if command is None or command == "version":
         return cmd_version(args, out=out)
@@ -519,6 +817,10 @@ def main(argv: Sequence[str] | None = None, out: IO[str] = sys.stdout) -> int:
             return cmd_rollback(args, out=out)
         elif command == "setup":
             return cmd_setup(args, out=out)
+        elif command == "watch":
+            return cmd_watch(args, out=out)
+        elif command == "status":
+            return cmd_status(args, out=out)
         else:
             parser.print_help(file=sys.stderr)
             return EXIT_USAGE

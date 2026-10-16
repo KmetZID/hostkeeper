@@ -1,0 +1,79 @@
+# Contoh konfigurasi monitoring dan alert hostkeeper (v0.3)
+# Simpan file ini di /etc/hostkeeper/watch.yml dengan izin mode 0600:
+#   sudo cp docs/watch.example.yml /etc/hostkeeper/watch.yml
+#   sudo chmod 600 /etc/hostkeeper/watch.yml
+
+# URL Webhook untuk notifikasi (contoh URL dummy)
+webhook_url: "https://example.invalid/hook"
+
+# Format notifikasi yang didukung: "slack", "discord", atau "json"
+webhook_format: "slack"
+
+# Cooldown antar-alert berulang dalam detik (default: 3600 detik = 1 jam)
+cooldown_seconds: 3600
+
+# Pengaturan ambang batas metrik (thresholds)
+# Masing-masing metrik mendukung 'warn', 'crit', dan 'recover' (hysteresis)
+thresholds:
+  mem_used_percent:
+    warn: 80.0
+    crit: 90.0
+    recover: 75.0
+
+  swap_used_percent:
+    warn: 50.0
+    crit: 80.0
+    recover: 40.0
+
+  disk_used_percent:
+    warn: 80.0
+    crit: 90.0
+    recover: 75.0
+
+  disk_inodes_used_percent:
+    warn: 80.0
+    crit: 90.0
+    recover: 75.0
+
+  cpu_load_per_core:
+    warn: 2.0
+    crit: 4.0
+    recover: 1.5
+
+  psi_cpu_some_avg10:
+    warn: 25.0
+    crit: 50.0
+    recover: 15.0
+
+  psi_memory_some_avg10:
+    warn: 25.0
+    crit: 50.0
+    recover: 15.0
+
+  psi_io_some_avg10:
+    warn: 25.0
+    crit: 50.0
+    recover: 15.0
+
+  services_failed_count:
+    warn: 1
+    crit: 1
+    recover: 0
+
+  updates_security:
+    warn: 1
+    crit: 5
+    recover: 0
+
+  updates_reboot_required:
+    warn: true
+    recover: false
+
+  ssh_failed_logins:
+    warn: 10
+    crit: 50
+    recover: 5
+
+  time_ntp_synchronized:
+    warn: false
+    recover: true

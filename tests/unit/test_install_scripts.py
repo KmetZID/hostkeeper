@@ -49,7 +49,7 @@ def test_install_script_dry_run() -> None:
         check=False,
     )
     assert res.returncode == 0
-    assert "hostkeeper 0.1.0 terpasang." in res.stdout
+    assert "hostkeeper 0.3.0 terpasang." in res.stdout
     assert "[dry-run]" in res.stdout
     # Tidak boleh membuat direktori tersebut saat dry-run
     assert not Path("/tmp/nonexistent-prefix").exists()

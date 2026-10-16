@@ -182,6 +182,11 @@ $LIB_DIR/VERSION
 $LIB_DIR/MANIFEST
 $LIB_DIR/hostkeeper
 EOF
+    if [[ -d "$SCRIPT_DIR/packaging/systemd" && "${#UNITS[@]}" -gt 0 ]]; then
+        for u in "${UNITS[@]}"; do
+            echo "/etc/systemd/system/$(basename "$u")" >> "$LIB_DIR/MANIFEST"
+        done
+    fi
 fi
 
 # 9. Smoke test

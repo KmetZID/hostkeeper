@@ -216,3 +216,142 @@ def print_verify_json(items: list[Any], out: IO[str] = sys.stdout) -> int:
     output = {"steps": steps_out, "drift": drift}
     print(json.dumps(output, ensure_ascii=False), file=out)
     return drift
+
+
+def print_status_table(
+    version: str,
+    hostname: str,
+    metrics: list[Any],
+    compliances: list[Any],
+    no_color: bool = False,
+    out: IO[str] = sys.stdout,
+) -> tuple[int, int, int]:
+    """Mencetak kartu status kesehatan sistem dan kesesuaian profil.
+
+    Mengembalikan tuple (count_warn, count_crit, count_drift).
+    """
+    color = is_color_enabled(no_color)
+    c_green = "\033[32m" if color else ""
+    c_yellow = "\033[33m" if color else ""
+    c_red = "\033[31m" if color else ""
+    c_cyan = "\033[36m" if color else ""
+    c_bold = "\033[1m" if color else ""
+    c_reset = "\033[0m" if color else ""
+
+    print(f"{c_bold}hostkeeper {version} status{c_reset}", file=out)
+    print(f"Host    : {hostname}", file=out)
+    print(file=out)
+
+    count_warn = 0
+    count_crit = 0
+    count_drift = 0
+
+    print(f"{c_bold}METRIK SISTEM:{c_reset}", file=out)
+    print(f" {'STATUS':<7} {'METRIK':<32} {'NILAI':<25}", file=out)
+
+    for m in metrics:
+        st = getattr(m, "status", getattr(m, "status_hint", "ok"))
+        if st == "crit":
+            count_crit += 1
+            sym = f"{c_red}[CRIT]{c_reset} "
+        elif st == "warn":
+            count_warn += 1
+            sym = f"{c_yellow}[WARN]{c_reset} "
+        elif st == "unknown":
+            sym = f"{c_cyan}[?]   {c_reset} "
+        else:
+            sym = f"{c_green}[OK]  {c_reset} "
+
+        val_display = f"{m.value} {m.unit}".strip()
+        print(f" {sym:<7} {m.name:<32} {val_display:<25}", file=out)
+
+    if compliances:
+        print(file=out)
+        print(f"{c_bold}KESESUAIAN PROFIL:{c_reset}", file=out)
+        print(f" {'STATUS':<7} {'STEP':<15} {'KONDISI':<40}", file=out)
+        for comp in compliances:
+            if not comp.compliant:
+                count_drift += 1
+                sym = f"{c_yellow}[WARN]{c_reset} "
+            else:
+                sym = f"{c_green}[OK]  {c_reset} "
+            print(f" {sym:<7} {comp.name:<15} {comp.detail:<40}", file=out)
+
+    print(file=out)
+    if count_warn == 0 and count_crit == 0 and count_drift == 0:
+        print(f"{c_green}{messages.STATUS_SUMMARY_OK}{c_reset}", file=out)
+    else:
+        summary_msg = messages.STATUS_SUMMARY_ISSUES.format(
+            warn=count_warn,
+            crit=count_crit,
+            drift=count_drift,
+        )
+        print(f"{c_yellow}{summary_msg}{c_reset}", file=out)
+
+    return count_warn, count_crit, count_drift
+
+
+def print_status_json(
+    version: str,
+    hostname: str,
+    metrics: list[Any],
+    compliances: list[Any],
+    out: IO[str] = sys.stdout,
+) -> tuple[int, int, int]:
+    """Mencetak kartu status dalam format JSON."""
+    count_warn = 0
+    count_crit = 0
+    count_drift = 0
+
+    metrics_data: list[dict[str, Any]] = []
+    for m in metrics:
+        st = getattr(m, "status", getattr(m, "status_hint", "ok"))
+        if st == "crit":
+            count_crit += 1
+        elif st == "warn":
+            count_warn += 1
+        metrics_data.append(
+            {
+                "name": m.name,
+                "value": m.value,
+                "unit": getattr(m, "unit", ""),
+                "status": st,
+            }
+        )
+
+    profile_data: list[dict[str, Any]] = []
+    for comp in compliances:
+        if not comp.compliant:
+            count_drift += 1
+        profile_data.append(
+            {
+                "name": comp.name,
+                "compliant": comp.compliant,
+                "status": comp.status,
+                "current": comp.current,
+                "detail": comp.detail,
+            }
+        )
+
+    overall_status = "ok"
+    if count_crit > 0:
+        overall_status = "crit"
+    elif count_warn > 0 or count_drift > 0:
+        overall_status = "warn"
+
+    payload = {
+        "version": version,
+        "hostname": hostname,
+        "status": overall_status,
+        "metrics": metrics_data,
+        "profile": profile_data,
+        "summary": {
+            "warn": count_warn,
+            "crit": count_crit,
+            "drift": count_drift,
+            "total_metrics": len(metrics),
+            "total_profile_steps": len(compliances),
+        },
+    }
+    print(json.dumps(payload, ensure_ascii=False), file=out)
+    return count_warn, count_crit, count_drift
