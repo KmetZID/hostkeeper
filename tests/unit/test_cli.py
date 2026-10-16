@@ -30,11 +30,18 @@ def test_cli_version() -> None:
 
 
 def test_cli_subcommand_stubs() -> None:
-    stubs = ["rollback", "setup", "watch", "status"]
+    stubs = ["watch", "status"]
     for sub in stubs:
         out = io.StringIO()
         code = main([sub], out=out)
         assert code == EXIT_USAGE
+
+
+def test_cli_rollback_non_root_returns_exit_5() -> None:
+    out = io.StringIO()
+    with patch("os.geteuid", return_value=1000):
+        code = main(["rollback"], out=out)
+        assert code == EXIT_ENV
 
 
 def test_cli_apply_non_root_returns_exit_5() -> None:

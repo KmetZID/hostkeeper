@@ -21,17 +21,42 @@ def test_registry_steps() -> None:
 @pytest.mark.parametrize("step_cls", REGISTRY)
 def test_generic_step_check_is_pure_and_readonly(step_cls: type) -> None:
     """Memastikan check() murni dan tidak pernah memanggil perintah mutating."""
+    sample_key = (
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleValidKey1234567890 key1@host"
+    )
     prof = Profile(
         version=1,
         hostname="target-host",
         timezone="Asia/Jakarta",
+        admin_user="deploy",
+        ssh_authorized_keys=(sample_key,),
+        ssh={"permit_root_login": "no"},
+        unattended_upgrades=True,
+        firewall={"allow": ("80/tcp",)},
     )
     fake_runner = FakeRunner(
         responses={
             ("hostnamectl", "--static"): "current-host\n",
             ("timedatectl", "show", "-p", "Timezone", "--value"): "UTC\n",
+            ("id", "deploy"): "uid=1001(deploy)\n",
+            ("id", "-Gn", "deploy"): "deploy sudo\n",
+            ("getent", "passwd", "deploy"): (
+                "deploy:x:1001:1001::/home/deploy:/bin/bash\n"
+            ),
+            ("sshd", "-T"): "permitrootlogin yes\n",
+            ("systemctl", "is-active", "ssh.socket"): "inactive\n",
+            ("dpkg-query", "-W", "-f=${Package} ${Status}\\n", "unattended-upgrades"): (
+                "unattended-upgrades install ok installed\n"
+            ),
+            ("dpkg-query", "-W", "-f=${Package} ${Status}\\n", "nftables"): (
+                "nftables install ok installed\n"
+            ),
+            ("systemctl", "is-active", "ufw"): ("inactive\n"),
+            ("systemctl", "is-active", "firewalld"): ("inactive\n"),
         }
     )
+    fake_runner.register(["systemctl", "is-active", "ufw"], "", returncode=3)
+    fake_runner.register(["systemctl", "is-active", "firewalld"], "", returncode=3)
     ro_runner = ReadOnlyRunner(fake_runner)
     ro_fs = ReadOnlyFileOps(FakeFileOps())
 
@@ -47,11 +72,20 @@ def test_generic_step_check_is_pure_and_readonly(step_cls: type) -> None:
 @pytest.mark.parametrize("step_cls", REGISTRY)
 def test_generic_step_idempotency(step_cls: type) -> None:
     """Tes idempotency generik: apply lalu plan ulang harus menghasilkan 0 perubahan."""
+    sample_key = (
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleValidKey1234567890 key1@host"
+    )
     prof = Profile(
         version=1,
         hostname="web-01",
         timezone="Asia/Jakarta",
         packages=("htop",),
+        admin_user="deploy",
+        admin_sudo_nopasswd=True,
+        ssh_authorized_keys=(sample_key,),
+        ssh={"permit_root_login": "no"},
+        unattended_upgrades=True,
+        firewall={"allow": ("80/tcp",)},
     )
     # Runner awal dengan kondisi drift
     runner = FakeRunner(
@@ -67,10 +101,57 @@ def test_generic_step_idempotency(step_cls: type) -> None:
             ("apt-cache", "policy", "htop"): "htop:\n  Candidate: 3.2.2\n",
             ("apt-get", "update"): "",
             ("apt-get", "install", "-y", "--no-install-recommends", "htop"): "",
+            ("useradd", "-m", "-s", "/bin/bash", "deploy"): "",
+            ("usermod", "-aG", "sudo", "deploy"): "",
+            ("visudo", "-cf", "/tmp/.hostkeeper_visudo_deploy.tmp"): "",
+            ("getent", "passwd", "deploy"): (
+                "deploy:x:1001:1001::/home/deploy:/bin/bash\n"
+            ),
+            (
+                "install",
+                "-d",
+                "-m",
+                "700",
+                "-o",
+                "deploy",
+                "-g",
+                "deploy",
+                "/home/deploy/.ssh",
+            ): "",
+            ("sshd", "-T"): "permitrootlogin yes\n",
+            ("systemctl", "is-active", "ssh.socket"): "inactive\n",
+            ("sshd", "-t"): "",
+            ("systemctl", "reload", "ssh"): "",
+            ("dpkg-query", "-W", "-f=${Package} ${Status}\\n", "unattended-upgrades"): (
+                "unattended-upgrades install ok installed\n"
+            ),
+            ("dpkg-query", "-W", "-f=${Package} ${Status}\\n", "nftables"): (
+                "nftables install ok installed\n"
+            ),
+            ("systemctl", "is-active", "ufw"): ("inactive\n"),
+            ("systemctl", "is-active", "firewalld"): ("inactive\n"),
+            ("nft", "-c", "-f", "/etc/hostkeeper/firewall.nft"): "",
+            ("nft", "-f", "/etc/hostkeeper/firewall.nft"): "",
+            ("systemctl", "daemon-reload"): "",
+            ("systemctl", "enable", "hostkeeper-firewall.service"): "",
+            (
+                "apt-get",
+                "install",
+                "-y",
+                "--no-install-recommends",
+                "unattended-upgrades",
+            ): "",
         }
     )
+    runner.register(["id", "deploy"], "", returncode=1, stderr="no such user")
+    runner.register(["systemctl", "is-active", "ufw"], "", returncode=3)
+    runner.register(["systemctl", "is-active", "firewalld"], "", returncode=3)
     fs = FakeFileOps()
     step = step_cls(prof, runner, fs)
+    if hasattr(step, "bypass_human_gate"):
+        setattr(step, "bypass_human_gate", True)
+    if hasattr(step, "_test_ssh_login_mechanism"):
+        setattr(step, "_test_ssh_login_mechanism", lambda *a, **k: True)
     assert step.enabled()
 
     # Periksa drift awal
@@ -95,6 +176,19 @@ def test_generic_step_idempotency(step_cls: type) -> None:
             ["dpkg-query", "-W", "-f=${Package} ${Status}\\n", "htop"],
             "htop install ok installed\n",
         )
+    elif step.name == "user":
+        runner.register(["id", "deploy"], "uid=1001(deploy)\n")
+        runner.register(["id", "-Gn", "deploy"], "deploy sudo\n")
+    elif step.name == "sshkeys":
+        pass
+    elif step.name == "sshd":
+        runner.register(["sshd", "-T"], "permitrootlogin no\n")
+    elif step.name == "updates":
+        # Setelah apply, paket terpasang dan config tertulis
+        pass  # FakeFileOps sudah menyimpan file yang ditulis
+    elif step.name == "firewall":
+        # Setelah apply, FakeFileOps sudah menyimpan ruleset dan service
+        pass
 
     # Periksa ulang (check dan plan kedua)
     chk2 = step.check()
