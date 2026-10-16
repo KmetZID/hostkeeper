@@ -16,6 +16,7 @@ from hostkeeper.engine.executor import Executor, make_run_id, sha256_file
 from hostkeeper.engine.journal import JournalWriter
 from hostkeeper.engine.lock import LockConflict, LockManager
 from hostkeeper.engine.planner import Planner
+from hostkeeper.engine.rollback import RollbackError, RollbackManager
 from hostkeeper.env import detect_env
 from hostkeeper.output import (
     format_plan_summary,
@@ -28,6 +29,7 @@ from hostkeeper.profile import ProfileValidationError, load_profile
 from hostkeeper.steps import REGISTRY
 from hostkeeper.system.fileops import ReadOnlyFileOps, RealFileOps
 from hostkeeper.system.runner import ReadOnlyRunner, SubprocessRunner
+from hostkeeper.wizard import Wizard
 
 # Exit codes sesuai SPEC bagian 7
 EXIT_OK = 0
@@ -119,6 +121,18 @@ def _build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Identik dengan plan tetapi lewat jalur apply",
     )
+    apply_p.add_argument(
+        "--confirm-timeout",
+        type=int,
+        default=90,
+        help="Timeout safety timer dalam detik (default: 90)",
+    )
+    apply_p.add_argument(
+        "--saya-sudah-uji-login-kunci",
+        action="store_true",
+        default=False,
+        help="Bypass gerbang konfirmasi manusia SSH jika kunci sudah diuji",
+    )
 
     # verify
     subparsers.add_parser(
@@ -127,14 +141,50 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Cek kesesuaian tanpa mengubah",
     )
 
-    # Stub subcommands
+    # rollback
+    rollback_p = subparsers.add_parser(
+        "rollback",
+        parents=[common],
+        help="Kembalikan run dari journal",
+    )
+    rollback_p.add_argument(
+        "run_id",
+        nargs="?",
+        default=None,
+        help="ID run yang ingin di-rollback (default: run terakhir)",
+    )
+    rollback_p.add_argument(
+        "--list",
+        action="store_true",
+        default=False,
+        help="Daftar run yang tersimpan dalam journal",
+    )
+    rollback_p.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        default=False,
+        help="Lanjutkan tanpa konfirmasi",
+    )
+    rollback_p.add_argument(
+        "--reason",
+        default="manual",
+        choices=["manual", "timer"],
+        help="Alasan rollback (default: manual)",
+    )
+
     for stub_name, stub_help in [
-        ("rollback", "Kembalikan run dari journal (v0.2)"),
-        ("setup", "Wizard interaktif (v0.2)"),
         ("watch", "Monitoring (v0.2)"),
         ("status", "Kartu kesehatan (v0.3)"),
     ]:
         subparsers.add_parser(stub_name, parents=[common], help=stub_help)
+
+    # setup
+    subparsers.add_parser(
+        "setup",
+        parents=[common],
+        help="Wizard interaktif untuk membuat profil",
+    )
 
     return parser
 
@@ -299,7 +349,14 @@ def cmd_apply(args: argparse.Namespace, out: IO[str] = sys.stdout) -> int:
         )
 
         # Siapkan pasangan (step, changes)
+        bypass_human_gate: bool = getattr(args, "saya_sudah_uji_login_kunci", False)
+        for item in plan_report.items:
+            if hasattr(item.step, "bypass_human_gate"):
+                setattr(item.step, "bypass_human_gate", bypass_human_gate)
+
         steps_with_changes = [(item.step, item.changes) for item in plan_report.items]
+
+        confirm_timeout: int = getattr(args, "confirm_timeout", 90)
 
         executor = Executor(
             steps_with_changes=steps_with_changes,
@@ -310,6 +367,8 @@ def cmd_apply(args: argparse.Namespace, out: IO[str] = sys.stdout) -> int:
             out=out,
             dry_run=dry_run,
             yes=yes,
+            runner=runner,
+            confirm_timeout=confirm_timeout,
         )
 
         report = executor.run()
@@ -360,6 +419,72 @@ def cmd_verify(args: argparse.Namespace, out: IO[str] = sys.stdout) -> int:
     return EXIT_DRIFT if drift > 0 else EXIT_OK
 
 
+def cmd_rollback(args: argparse.Namespace, out: IO[str] = sys.stdout) -> int:
+    """Mengembalikan konfigurasi sistem dari journal run terdahulu."""
+    mgr = RollbackManager(print_fn=lambda msg: print(msg, file=out))
+
+    if getattr(args, "list", False):
+        runs = mgr.list_runs()
+        if not runs:
+            print(messages.ROLLBACK_LIST_EMPTY, file=out)
+            return EXIT_OK
+        print(messages.ROLLBACK_LIST_HEADER, file=out)
+        for r in runs:
+            print(
+                f"  {r['run_id']} (v{r['hostkeeper']}, {r['steps_count']} steps)",
+                file=out,
+            )
+        return EXIT_OK
+
+    if os.geteuid() != 0:
+        print(f"ERROR: {messages.ROLLBACK_ERROR_NEEDS_ROOT}", file=sys.stderr)
+        return EXIT_ENV
+
+    lock_mgr = LockManager(Path("/run/hostkeeper.lock"))
+    try:
+        lock_mgr.acquire()
+    except LockConflict:
+        print(f"ERROR: {messages.LOCK_CONFLICT}", file=sys.stderr)
+        return EXIT_LOCK
+
+    try:
+        ok = mgr.rollback(
+            run_id=getattr(args, "run_id", None),
+            yes=getattr(args, "yes", False),
+            reason=getattr(args, "reason", "manual"),
+        )
+        return EXIT_OK if ok else EXIT_ERROR
+    except RollbackError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+    finally:
+        lock_mgr.release()
+
+
+def cmd_setup(args: argparse.Namespace, out: IO[str] = sys.stdout) -> int:
+    """Menjalankan wizard interaktif untuk membuat profil."""
+    profile_path = Path(args.config)
+    fs = RealFileOps()
+
+    wizard = Wizard(
+        profile_path=profile_path,
+        fs=fs,
+        out=out,
+    )
+
+    try:
+        should_plan = wizard.run()
+    except (EOFError, KeyboardInterrupt):
+        print(f"\n{messages.WIZARD_CANCELLED}", file=out)
+        return EXIT_OK
+
+    if should_plan:
+        # Jalankan plan, TIDAK pernah apply
+        return cmd_plan(args, out=out)
+
+    return EXIT_OK
+
+
 def main(argv: Sequence[str] | None = None, out: IO[str] = sys.stdout) -> int:
     """Entrypoint utama CLI. Mengembalikan exit code."""
     parser = _build_parser()
@@ -373,8 +498,6 @@ def main(argv: Sequence[str] | None = None, out: IO[str] = sys.stdout) -> int:
 
     # Stub subcommands
     stubs = {
-        "rollback": messages.STUB_ROLLBACK,
-        "setup": messages.STUB_SETUP,
         "watch": messages.STUB_WATCH,
         "status": messages.STUB_STATUS,
     }
@@ -392,6 +515,10 @@ def main(argv: Sequence[str] | None = None, out: IO[str] = sys.stdout) -> int:
             return cmd_apply(args, out=out)
         elif command == "verify":
             return cmd_verify(args, out=out)
+        elif command == "rollback":
+            return cmd_rollback(args, out=out)
+        elif command == "setup":
+            return cmd_setup(args, out=out)
         else:
             parser.print_help(file=sys.stderr)
             return EXIT_USAGE

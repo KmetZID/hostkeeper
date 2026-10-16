@@ -106,15 +106,16 @@ class AuditWriter:
             }
         )
 
-    def log_undo(self, step: str) -> None:
-        self._write(
-            {
-                "ts": self._ts(),
-                "run_id": self.run_id,
-                "event": "undo",
-                "step": step,
-            }
-        )
+    def log_undo(self, step: str, reason: str | None = None) -> None:
+        rec: dict[str, object] = {
+            "ts": self._ts(),
+            "run_id": self.run_id,
+            "event": "undo",
+            "step": step,
+        }
+        if reason is not None:
+            rec["reason"] = reason
+        self._write(rec)
 
     def log_run_end(self, result: str) -> None:
         self._write(

@@ -13,7 +13,9 @@ from typing import IO, Callable
 from hostkeeper import messages
 from hostkeeper.engine.audit import AuditWriter
 from hostkeeper.engine.journal import JournalWriter
-from hostkeeper.engine.step import Change, Step
+from hostkeeper.engine.safety_timer import SafetyTimer
+from hostkeeper.engine.step import Change, Risk, Step
+from hostkeeper.system.runner import Runner, SubprocessRunner
 
 
 def make_run_id() -> str:
@@ -81,23 +83,35 @@ class Executor:
         self,
         steps_with_changes: list[tuple[Step, list[Change]]],
         run_id: str,
-        profile_path: Path,
-        audit: AuditWriter,
-        journal: JournalWriter,
+        profile_path: Path | None = None,
+        audit: AuditWriter | None = None,
+        journal: JournalWriter | None = None,
         out: IO[str] | None = None,
         dry_run: bool = False,
         yes: bool = False,
         confirm_fn: Callable[[str], str] | None = None,
+        runner: Runner | None = None,
+        confirm_timeout: int = 90,
     ) -> None:
         self.steps_with_changes = steps_with_changes
         self.run_id = run_id
-        self.profile_path = profile_path
-        self.audit = audit
-        self.journal = journal
+        self.profile_path = profile_path or Path("/etc/hostkeeper/profile.yml")
+        self.audit = audit or AuditWriter(run_id=run_id)
+        self.journal = journal or JournalWriter(run_id=run_id, profile_sha256="")
         self.out = out or sys.stdout
         self.dry_run = dry_run
         self.yes = yes
         self.confirm_fn = confirm_fn or input
+        self.runner = (
+            runner
+            if runner is not None
+            else (
+                steps_with_changes[0][0].runner
+                if steps_with_changes
+                else SubprocessRunner()
+            )
+        )
+        self.confirm_timeout = confirm_timeout
 
     def _print(self, msg: str) -> None:
         print(msg, file=self.out)
@@ -152,6 +166,39 @@ class Executor:
                 report.results.append(sr)
                 continue
 
+            # Safety timer jika Step berisiko tinggi
+            timer: SafetyTimer | None = None
+            if step.risk == Risk.HIGH and not self.dry_run:
+                timer = SafetyTimer(
+                    runner=self.runner,
+                    run_id=self.run_id,
+                    timeout_seconds=self.confirm_timeout,
+                    print_fn=self._print,
+                )
+                try:
+                    timer.start()
+                except Exception as exc:
+                    sr.failed = True
+                    sr.error = f"Safety timer gagal: {exc}"
+                    self._print(
+                        f" [!] {step.name:<10} gagal memulai safety timer: {sr.error}"
+                    )
+                    self.audit.log_step_failed(step.name, sr.error)
+                    report.results.append(sr)
+                    self.journal.record_step(
+                        name=step.name,
+                        status="failed",
+                        reversible=step.reversible,
+                        changes=changes,
+                    )
+                    self._handle_failure(
+                        failed_step=step,
+                        applied_reversible=applied_reversible,
+                        report=report,
+                        remaining=self.steps_with_changes[idx:],
+                    )
+                    return report
+
             # Apply
             apply_ok = True
             apply_err = ""
@@ -163,6 +210,8 @@ class Executor:
                 apply_err = str(exc)
 
             if not apply_ok:
+                if timer is not None:
+                    timer.stop()
                 sr.failed = True
                 sr.error = apply_err
                 self._print(f" [!] {step.name:<10} {desc}")
@@ -196,6 +245,8 @@ class Executor:
                 verify_err = str(exc)
 
             if not verify_ok:
+                if timer is not None:
+                    timer.stop()
                 sr.failed = True
                 sr.error = verify_err
                 self._print(f" [!] {step.name:<10} verify gagal: {sr.error}")
@@ -214,6 +265,19 @@ class Executor:
                     remaining=self.steps_with_changes[idx:],
                 )
                 return report
+
+            # Batalkan safety timer setelah lolos verify dan konfirmasi
+            if timer is not None:
+                if not self.yes:
+                    prompt = messages.SAFETY_TIMER_PROMPT.format(step=step.name)
+                    try:
+                        ans = self.confirm_fn(prompt)
+                    except (EOFError, KeyboardInterrupt):
+                        ans = "n"
+                    if ans.strip().lower() in ("", "y", "ya"):
+                        timer.stop()
+                else:
+                    timer.stop()
 
             sr.verified = True
             self._print(f" [~] {step.name:<10} {desc} OK (verify lolos)")

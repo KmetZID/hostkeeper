@@ -22,6 +22,29 @@ PACKAGES_TOO_MANY = "Jumlah paket ({count}) melebihi batas maksimal 100 paket"
 PACKAGE_INVALID_NAME = (
     "Nama paket '{package}' tidak valid (harus sesuai regex ^[a-z0-9][a-z0-9+.-]*$)"
 )
+ADMIN_USER_INVALID = (
+    "Nama admin_user '{user}' tidak valid "
+    "(huruf kecil, angka, _, -, maksimal 32 karakter, tidak boleh root)"
+)
+SSH_KEYS_INVALID_TYPE = "ssh_authorized_keys harus berupa list/daftar"
+SSH_KEY_INVALID = "Kunci SSH tidak valid: '{key}'"
+SSH_CONFIG_INVALID_TYPE = "ssh harus berupa pemetaan YAML (dictionary)"
+SSH_CONFIG_UNKNOWN_KEYS = "Kunci tidak dikenal pada konfigurasi ssh: {keys}"
+SSH_PORT_INVALID = "Port SSH harus berupa integer antara 1 dan 65535"
+SSH_PERMIT_ROOT_INVALID = (
+    "permit_root_login tidak valid: '{val}' "
+    "(pilihan: yes, no, prohibit-password, forced-commands-only)"
+)
+SSH_PASSWORD_AUTH_INVALID = "password_auth harus berupa boolean (true/false)"
+FIREWALL_CONFIG_INVALID_TYPE = "firewall harus berupa pemetaan YAML (dictionary)"
+FIREWALL_CONFIG_UNKNOWN_KEYS = "Kunci tidak dikenal pada konfigurasi firewall: {keys}"
+FIREWALL_ALLOW_INVALID_TYPE = "firewall.allow harus berupa list/daftar"
+FIREWALL_RULE_INVALID = (
+    "Aturan firewall '{rule}' tidak valid "
+    "(format: <port>/tcp atau <port>/udp, port 1-65535)"
+)
+UNATTENDED_UPGRADES_INVALID = "unattended_upgrades harus berupa boolean (true/false)"
+
 
 # Step status & results
 STEP_COMPLIANT = "sudah sesuai"
@@ -116,3 +139,64 @@ VERIFY_DRIFT = (
     "{n} Step menyimpang dari profil. Jalankan `hostkeeper plan` untuk detail."
 )
 VERIFY_EXPECT = "diharapkan {expected}, sekarang {current}"
+
+# Rollback messages
+ROLLBACK_CONFIRM_PROMPT = "\nLanjutkan rollback run {run_id}? [y/N] "
+ROLLBACK_ABORT = "Rollback dibatalkan."
+ROLLBACK_NO_RUNS = "Tidak ada run yang dapat di-rollback."
+ROLLBACK_RUN_NOT_FOUND = "Run '{run_id}' tidak ditemukan di {dir}."
+ROLLBACK_JOURNAL_INVALID = "Journal run '{run_id}' rusak atau tidak valid: {detail}"
+ROLLBACK_STEP_UNDONE = " [~] {name:<10} dikembalikan"
+ROLLBACK_STEP_CANNOT_UNDO = " [!] {name:<10} tidak dapat dibalik otomatis"
+ROLLBACK_DONE = "Rollback selesai untuk run {run_id} ({undone} step dikembalikan)."
+ROLLBACK_LIST_HEADER = "Daftar run yang tersimpan:"
+ROLLBACK_LIST_EMPTY = "Tidak ada riwayat run yang tersimpan."
+ROLLBACK_ERROR_NEEDS_ROOT = (
+    "rollback membutuhkan root. Jalankan: sudo hostkeeper rollback"
+)
+
+# Safety timer messages
+SAFETY_TIMER_STARTED = (
+    " [!] Safety timer aktif ({seconds}s). "
+    "Jangan tutup sesi ini, uji dari terminal kedua."
+)
+SAFETY_TIMER_STOPPED = " [~] Safety timer dibatalkan."
+SAFETY_TIMER_PROMPT = (
+    "Perubahan berisiko tinggi '{step}' berhasil diverifikasi. "
+    "Batalkan timer otomatis? [Y/n] "
+)
+SAFETY_TIMER_FAILED = "Safety timer gagal: {detail}"
+
+# Wizard messages
+WIZARD_WELCOME = (
+    "=== hostkeeper setup ===\n"
+    "Wizard ini akan membuat profil konfigurasi server.\n"
+    "Tekan Ctrl+C untuk membatalkan kapan saja.\n"
+)
+WIZARD_PROMPT_HOSTNAME = "Hostname server [{default}]: "
+WIZARD_PROMPT_TIMEZONE = "Timezone [{default}]: "
+WIZARD_PROMPT_PACKAGES = (
+    "Paket tambahan (pisahkan dengan spasi, kosongkan untuk lewati) [{default}]: "
+)
+WIZARD_PROMPT_ADMIN_USER = "Nama admin user (kosongkan untuk lewati) [{default}]: "
+WIZARD_PROMPT_SSH_KEY = (
+    "Kunci publik SSH (tempel isi atau path .pub, kosongkan untuk selesai): "
+)
+WIZARD_PROMPT_SSH_HARDEN = (
+    "Hardening SSH (PermitRootLogin=no, PasswordAuth=false)? [y/N]: "
+)
+WIZARD_PROMPT_SSH_PORT = "Port SSH [{default}]: "
+WIZARD_PROMPT_FIREWALL_PORTS = (
+    "Port firewall yang diizinkan "
+    "(format: 80/tcp 443/tcp, kosongkan untuk lewati) [{default}]: "
+)
+WIZARD_PROMPT_UPDATES = "Aktifkan pembaruan otomatis (unattended-upgrades)? [Y/n]: "
+WIZARD_PROMPT_OVERWRITE = (
+    "File profil {path} sudah ada. Timpa? (backup dibuat otomatis) [y/N]: "
+)
+WIZARD_PROMPT_RUN_PLAN = "Jalankan `hostkeeper plan` sekarang? [Y/n]: "
+WIZARD_PROFILE_WRITTEN = "Profil ditulis ke {path}"
+WIZARD_BACKUP_CREATED = "Backup profil lama: {path}"
+WIZARD_INVALID_INPUT = "Input tidak valid: {detail}. Coba lagi."
+WIZARD_CANCELLED = "Setup dibatalkan."
+WIZARD_SKIP_COMPLIANT = "  [~] {field} sudah sesuai, dilewati."
