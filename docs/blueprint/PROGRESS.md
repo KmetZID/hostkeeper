@@ -40,8 +40,10 @@
 - 2026-10-16, tahap 3.3: Watch daemon menggunakan pasangan systemd service dan timer (hostkeeper-watch.timer) dengan interval terkonfigurasi, serta menyediakan hostkeeper watch test-notify untuk memverifikasi integrasi webhook.
 - 2026-10-16, tahap 3.4: Hostkeeper status menggunakan ReadOnlyRunner dan ReadOnlyFileOps untuk memverifikasi kesesuaian profil secara aman tanpa efek samping pada sistem, mengembalikan exit code 3 jika terdeteksi status non-compliant.
 - 2026-10-16, tahap 3.5: Versi ditingkatkan ke 0.3.0 pada pyproject.toml dan __init__.py, serta dokumentasi arsitektur, panduan keamanan, dan template GitHub issues/dependabot dilengkapi untuk kesiapan open source.
+- 2026-10-16, CI fix (PR #6): Memasang paket ca-certificates pada langkah pra-checkout container di job install CI agar verifikasi sertifikat SSL git tidak gagal pada container minimal Debian/Ubuntu; menambahkan fail-fast: false pada matriks install; membatasi trigger push CI hanya ke branch main agar pull request tidak menjalankan CI dua kali.
 
 ## Temuan dan pertanyaan terbuka
 
 
 ## Insiden
+- 2026-10-16: CI pada PR #6 gagal di job install pada seluruh matriks container dengan pesan "server certificate verification failed. CAfile: none CRLfile: none" saat checkout, akibat container minimal debian/ubuntu belum terpasang ca-certificates. Diselesaikan dengan menambahkan ca-certificates pada langkah pra-checkout.
