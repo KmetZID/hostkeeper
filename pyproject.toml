@@ -7,10 +7,36 @@ name = "hostkeeper"
 version = "0.3.0"
 description = "Server setup and maintenance tool for Debian/Ubuntu"
 readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "MetzID" },
+]
 requires-python = ">=3.10"
+keywords = [
+    "debian",
+    "ubuntu",
+    "server",
+    "sysadmin",
+    "automation",
+    "security",
+    "monitoring",
+]
+classifiers = [
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+]
 dependencies = [
     "pyyaml",
 ]
+
+[project.urls]
+Repository = "https://github.com/KmetZID/hostkeeper"
+Issues = "https://github.com/KmetZID/hostkeeper/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -25,9 +51,6 @@ dev = [
 [tool.ruff]
 target-version = "py310"
 line-length = 88
-extend-exclude = [
-    "docs/blueprint",
-]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
