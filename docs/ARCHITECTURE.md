@@ -120,3 +120,121 @@ Daftar Step yang didukung:
    - Evaluator mendeteksi apakah terjadi transisi status (`ok -> warn`, `warn -> crit`, `crit/warn -> ok`).
    - Notifikasi dikirimkan ke webhook hanya jika terjadi transisi status baru.
    - Metrik yang berusia lebih dari 14 hari dipangkas otomatis.
+
+---
+
+## 4. Kontrak Antarmuka Abstraksi
+
+Untuk menjamin keamanan eksekusi dan memfasilitasi pengujian tanpa efek samping, sistem dibagi atas kontrak antarmuka yang ketat:
+
+### 4.1 Kontrak Step (`hostkeeper.engine.step.Step`)
+Setiap konfigurasi domain sistem wajib merupakan turunan dari kelas basis abstrak `Step`:
+- **Atribut Kelas**:
+  - `name: str`: Nama identifikasi unik Step dalam huruf kecil (mis. `"sshd"`, `"firewall"`).
+  - `description: str`: Deskripsi satu baris dalam Bahasa Indonesia.
+  - `risk: RiskLevel`: Tingkat risiko (`RiskLevel.LOW` atau `RiskLevel.HIGH`).
+  - `reversible: bool`: Menandakan apakah mutasi yang dilakukan dapat dibalikkan secara aman (bawaan: `True`).
+  - `requires: tuple[type[Step], ...]`: Tuple dependensi `Step` lain yang harus dieksekusi sebelumnya.
+- **Metode Siklus Hidup**:
+  - `enabled() -> bool`: Mengembalikan `True` jika Step aktif berdasarkan konfigurasi profil yang dimuat.
+  - `check() -> CheckResult`: Memeriksa kondisi sistem saat ini secara murni *read-only*. Dilarang keras melakukan mutasi file atau mengeksekusi perintah dengan `mutates=True`. Mengembalikan objek `CheckResult(compliant, current, target, drift_details)`.
+  - `plan() -> list[Change]`: Menghitung daftar perubahan deskriptif yang diperlukan untuk membawa sistem ke kondisi profil target.
+  - `apply() -> None`: Menerapkan perubahan pada sistem operasi melalui `self.runner` dan `self.fileops`.
+  - `verify() -> bool`: Memeriksa ulang apakah sistem telah mencapai kondisi compliant setelah `apply()`.
+  - `undo() -> None`: Membalikkan mutasi sistem ke kondisi semula jika terjadi kegagalan atau dipicu oleh perintah `rollback`.
+
+### 4.2 Kontrak Runner (`hostkeeper.system.runner.Runner`)
+Menyediakan abstraksi eksekusi perintah sistem biner:
+- **Metode**: `run(argv: Sequence[str], mutates: bool = False, check: bool = False, timeout: float | None = None) -> ProcessResult`
+- **Aturan Ketat**:
+  - Dilarang memanggil `shell=True`, `os.system`, atau `eval`/`exec`. Parameter `argv` wajib berupa list argumen biner eksplisit.
+  - Nilai balik `ProcessResult(returncode: int, stdout: str, stderr: str, ok: bool)`.
+  - **Implementasi**:
+    - `SubprocessRunner`: Menjalankan proses biner nyata via `subprocess.run`.
+    - `ReadOnlyRunner`: Digunakan pada mode `plan`, `verify`, `status`, dan `watch`. Jika dipanggil dengan flag `mutates=True`, langsung melempar exception fatal `ReadOnlyViolation`.
+    - `FakeRunner`: Digunakan pada pengujian unit terisolasi.
+
+### 4.3 Kontrak FileOps (`hostkeeper.system.fileops.FileOps`)
+Menyediakan abstraksi manipulasi sistem berkas:
+- **Metode Inti**:
+  - `read_text(path: Path | str) -> str`: Membaca konten berkas UTF-8.
+  - `write_text(path: Path | str, content: str, mode: int | None = None, backup: bool = True) -> None`: Menulis berkas secara atomik (menggunakan berkas sementara di direktori yang sama lalu `os.replace`). Jika `backup=True` dan berkas sudah ada, salinan dicadangkan otomatis.
+  - `exists(path: Path | str) -> bool`: Memeriksa keberadaan berkas atau direktori.
+  - `copy(src: Path | str, dst: Path | str) -> None`: Menyalin berkas dengan mempertahankan metadata (`shutil.copy2`).
+- **Implementasi**:
+  - `RealFileOps`: Operasi berkas nyata pada filesystem Linux.
+  - `ReadOnlyFileOps`: Melempar `ReadOnlyViolation` jika ada metode penulisan, penghapusan, atau penyalinan mutatif yang dipanggil.
+
+---
+
+## 5. Alur Alur Eksekusi Terperinci (Plan, Apply, Verify, Rollback)
+
+```text
++-----------------------------------------------------------------------------+
+| 1. PLAN FLOW (hostkeeper plan)                                              |
+|                                                                             |
+| load_profile() --> detect_env() --> Planner.resolve()                       |
+|        |                                    |                               |
+|        v                                    v                               |
+| ReadOnlyRunner & ReadOnlyFileOps   Topological DAG order                    |
+|        |                                    |                               |
+|        +------------------------------------+                               |
+|                                 |                                           |
+|                     for step in ordered_steps:                              |
+|                       step.enabled()?                                       |
+|                         yes: step.check() & step.plan()                     |
+|                                 |                                           |
+|                     render plan table / JSON --> EXIT_OK                    |
++-----------------------------------------------------------------------------+
+
++-----------------------------------------------------------------------------+
+| 2. APPLY FLOW (sudo hostkeeper apply)                                       |
+|                                                                             |
+| verify_root() --> LockManager.acquire() --> load_profile()                  |
+|        |                                                                    |
+|        v                                                                    |
+| Planner.resolve() --> prompt_user_confirmation()                           |
+|        |                                                                    |
+|        v (jika ada Step berisiko tinggi)                                    |
+| SafetyTimer.start(90s) via transient systemd-run timer                      |
+|        |                                                                    |
+|        v                                                                    |
+| Executor: buat journal entry (/var/lib/hostkeeper/journal/<run_id>.jsonl)   |
+| for step in ordered_steps:                                                  |
+|   backup existing files --> step.apply() --> step.verify()                  |
+|   if verify failed: trigger RollbackEngine automatically                    |
+|        |                                                                    |
+|        v                                                                    |
+| SafetyTimer.cancel() --> tulis status selesai ke Journal & Audit            |
++-----------------------------------------------------------------------------+
+
++-----------------------------------------------------------------------------+
+| 3. VERIFY FLOW (hostkeeper verify)                                          |
+|                                                                             |
+| ReadOnlyRunner & ReadOnlyFileOps                                            |
+| for step in ordered_steps:                                                  |
+|   res = step.check()                                                        |
+|   if not res.compliant: record drift                                       |
+|        |                                                                    |
+|        v                                                                    |
+| if any drift: return EXIT_DRIFT (3)                                         |
+| else: return EXIT_OK (0)                                                    |
++-----------------------------------------------------------------------------+
+
++-----------------------------------------------------------------------------+
+| 4. ROLLBACK FLOW (sudo hostkeeper rollback <RUN_ID>)                        |
+|                                                                             |
+| verify_root() --> LockManager.acquire()                                     |
+| JournalManager.read_run(<RUN_ID>)                                           |
+|        |                                                                    |
+|        v                                                                    |
+| for step_entry in reversed(journal.steps):                                  |
+|   1. restore backed-up files from /var/lib/hostkeeper/backups/<run_id>/    |
+|   2. if step.reversible: step.undo()                                        |
+|   3. step.verify()                                                          |
+|        |                                                                    |
+|        v                                                                    |
+| catat audit rollback selesai --> return EXIT_OK (0)                         |
++-----------------------------------------------------------------------------+
+```
+

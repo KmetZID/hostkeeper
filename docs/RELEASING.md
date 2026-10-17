@@ -5,7 +5,7 @@ Proses rilis hostkeeper dilakukan secara manual oleh pemilik repositori untuk me
 ## Daftar Periksa Pra-Rilis
 
 1. [ ] **Verifikasi Lokal dan Linting**
-   - Jalankan pemeriksaan integritas penuh di hk-dev:
+   - Jalankan pemeriksaan integritas penuh di lingkungan pengembangan:
      ```bash
      scripts/check.sh
      ```
@@ -15,14 +15,14 @@ Proses rilis hostkeeper dilakukan secara manual oleh pemilik repositori untuk me
      pytest --cov=hostkeeper.engine --cov=hostkeeper.steps --cov-fail-under=85
      ```
 
-2. [ ] **Verifikasi Gerbang VM (hk-target)**
-   - Jalankan skenario pengujian VM di target Debian 12 sesuai `docs/blueprint/05-TESTPLAN.md` bagian V1:
-     - Jalankan `install.sh` dua kali.
+2. [ ] **Verifikasi Gerbang Mesin Virtual (VM Uji)**
+   - Jalankan skenario pengujian VM di target Debian/Ubuntu bersih (lihat `docs/TESTING.md`):
+     - Jalankan `install.sh` dua kali (menguji idempoten).
      - Jalankan `hostkeeper plan`.
      - Jalankan `sudo hostkeeper apply`.
      - Jalankan `hostkeeper verify`.
      - Jalankan `uninstall.sh`.
-   - Restore snapshot hk-target setelah selesai.
+   - Kembalikan (*restore*) snapshot VM uji setelah selesai.
 
 3. [ ] **Perbarui Catatan Perubahan (CHANGELOG.md)**
    - Perbarui versi pada `CHANGELOG.md` dan `src/hostkeeper/__init__.py`.
