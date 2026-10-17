@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [ -z "${TARGET:-}" ]; then
     echo "ERROR: variabel lingkungan TARGET belum diatur." >&2
-    echo "Contoh: TARGET=user@hk-target:~/hostkeeper $0" >&2
+    echo "Contoh: TARGET=user@target-host:~/hostkeeper $0" >&2
     exit 1
 fi
 
