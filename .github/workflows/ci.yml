@@ -25,9 +25,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install .[dev]
 
-      - name: Verify protected blueprint files
-        run: sha256sum -c docs/blueprint/PROTECTED.sha256
-
       - name: Run ruff check
         run: ruff check
 

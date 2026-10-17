@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# uninstall.sh: Pencopot hostkeeper (SPEC bagian 9)
+# uninstall.sh: Pencopot hostkeeper
 set -Eeuo pipefail
 
 PREFIX="/usr/local"

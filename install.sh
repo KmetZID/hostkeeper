@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install.sh: Pemasang hostkeeper v0.1 (SPEC bagian 9)
+# install.sh: Pemasang hostkeeper
 set -Eeuo pipefail
 
 PREFIX="/usr/local"
@@ -151,7 +151,7 @@ run mkdir -p /etc/hostkeeper /var/lib/hostkeeper /var/log/hostkeeper
 run chmod 700 /etc/hostkeeper /var/lib/hostkeeper
 run chmod 750 /var/log/hostkeeper
 
-# 7. Unit systemd (v0.1: belum ada unit)
+# 7. Unit systemd
 if [[ -d "$SCRIPT_DIR/packaging/systemd" ]]; then
     mapfile -t UNITS < <(find "$SCRIPT_DIR/packaging/systemd" -maxdepth 1 -type f \( -name "*.service" -o -name "*.timer" \))
     if [[ "${#UNITS[@]}" -gt 0 ]]; then

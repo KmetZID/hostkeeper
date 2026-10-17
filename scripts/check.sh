@@ -4,11 +4,21 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-echo "==> Memeriksa integritas blueprint protected..."
-sha256sum -c docs/blueprint/PROTECTED.sha256
+if [ -f docs/blueprint/PROTECTED.sha256 ]; then
+    echo "==> Memeriksa integritas blueprint protected..."
+    sha256sum -c docs/blueprint/PROTECTED.sha256
+else
+    echo "melewati pemeriksaan blueprint (tidak ada)"
+fi
+
+if ! command -v ruff >/dev/null 2>&1; then
+    echo "aktifkan venv: source .venv/bin/activate"
+    exit 1
+fi
 
 echo "==> Menjalankan ruff check..."
 ruff check
+
 
 echo "==> Menjalankan ruff format --check..."
 ruff format --check

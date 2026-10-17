@@ -27,3 +27,12 @@ state.db
 audit.jsonl
 backups/
 journal/
+
+# Internal agent instructions and blueprint
+/AGENTS.md
+/docs/blueprint/
+/.agents/
+/.agent/
+/.antigravity/
+/GEMINI.md
+
